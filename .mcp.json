@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@roomi-fields/notebooklm-mcp@3.1.2"],
+      "env": {
+        "NOTEBOOKLM_UI_LOCALE": "en",
+        "NOTEBOOKLM_CONTENT_LANGUAGE": "en"
+      }
+    }
+  }
+}
