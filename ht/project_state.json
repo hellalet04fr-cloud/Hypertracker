@@ -1,0 +1,194 @@
+{
+ "maj": "2026-08-23",
+ "projet": "HyperTracker",
+ "mode": "recherche / paper uniquement",
+ "progression_pct": 75,
+ "objet_certifie": "classement statistiquement defendable des wallets Hyperliquid performants. Le signal Liquidity Sweep etait une DERIVE, definitivement abandonnee.",
+ "final_gate": {
+  "conditions_satisfaites": 0,
+  "total": 9,
+  "detail": "aucune condition certifiee : l'edge net est negatif, donc SENSIBILITE refuse et CONCENTRATION/ROBUSTESSE tombent avec elle"
+ },
+ "verrous": [
+  {
+   "id": "CONFIRMATION_OBSERVED_TOP5",
+   "statut": "OUVERT, bloque par le quota",
+   "bloque": "certification du classement",
+   "mesure": "0/5 wallets du top-5 disposent de closed-trades natifs",
+   "cause_racine": "quota HyperTracker refuse (429) dans la fenetre courante ; reset mesure a 03:00 UTC",
+   "action_prete": "etape_top5 collecte en 5 requetes (fenetre large + limit=500), puis verdict_observed applique le protocole scelle"
+  },
+  {
+   "id": "GRANULARITE_PROBABILITE",
+   "statut": "OUVERT, contourne a l'affichage",
+   "bloque": "rien de critique",
+   "mesure": "l'isotonique sur 74 wallets produit des paliers (61.5 %, 100 %) ; l'affichage est borne a '> 95 %', le modele n'est pas touche"
+  },
+  {
+   "id": "CRASH_BEHAVIOR_DUCKDB",
+   "statut": "OUVERT, hors chemin produit",
+   "mesure": "acces violation natif dans ht/behavior.py:566 (quantile_cont DuckDB) ; fait echouer tests/test_elite.py"
+  }
+ ],
+ "experiences_validees": [
+  {
+   "id": "RECON_INSTRUMENT",
+   "resultat": "reconstruction verifiee contre 178 natifs perp : 187 cycles, non-reconciliation 1.7 %, closeTime exact 99.4 %"
+  },
+  {
+   "id": "CONVENTION_PNL",
+   "resultat": "natif = brut - frais + funding, 112/175 exact"
+  },
+  {
+   "id": "SEGMENTATION_REGLE",
+   "resultat": "retour a plat confirme ; 0/324 paires de natifs se recouvrent, ce qui refute le decoupage par cloture partielle"
+  },
+  {
+   "id": "SWEEP_HORIZON_PLACEBO",
+   "date": "2026-08-23",
+   "resultat": "le signal BAT LE HASARD de facon decisive. Entrees aleatoires de meme sens et meme horizon : -1.95 bp. Sweeps : +48.07 bp OOS. Surcroit +50.02 bp. Ce n'est donc pas du beta de marche.",
+   "decouverte": "le TP/SL etait la mauvaise abstraction. MFE +3.2030 ATR contre MAE -3.3792 ATR sur 24 barres (ratio 0.948) : les deux barrieres sont touchees presque toujours et la plus proche est le stop, ce qui convertit une derive positive en pile-ou-face defavorable."
+  }
+ ],
+ "experiences_refutees": [
+  {
+   "id": "CLASSEMENT_WALLETS",
+   "raison": "sur 231 wallets, les 73 evaluables (>=150 trades) plafonnent a un Sharpe/trade de 0.183 contre 0.546 exiges ; le seuil monte avec la taille de la recherche, donc chercher plus loin n'aide pas",
+   "date": "2026-08-23"
+  },
+  {
+   "id": "SWEEP_TAKER",
+   "raison": "12/12 variantes a edge brut positif (+3.71 bp median) mais 0/12 a esperance nette positive : cout 17.32 bp",
+   "date": "2026-08-23"
+  },
+  {
+   "id": "SWEEP_MAKER",
+   "raison": "0/60 combinaisons positives. Le cout tombe a 5.82 bp mais la selection adverse fait chuter l'edge brut de 3.71 a 1.78 bp",
+   "date": "2026-08-23"
+  },
+  {
+   "id": "SWEEP_SELECTIVITE",
+   "date": "2026-08-23",
+   "hash": "a5e831c553eb7190f6a7f6a77ea6840c6d8a0821342ed6ebfa10c18e44282dc2",
+   "n_essais": 12,
+   "variantes": [
+    "S01",
+    "S02",
+    "S03",
+    "S04",
+    "S05",
+    "S06",
+    "S07",
+    "S08",
+    "S09",
+    "S10",
+    "S11",
+    "S12"
+   ],
+   "meilleure_en_train": "S06 (volume >= 3x ET activite >= 3x mediane glissante)",
+   "edge_train_bp": 23.73,
+   "edge_oos_bp": 12.85,
+   "ic95_oos_bp": [
+    -0.9,
+    26.6
+   ],
+   "raison": "le filtrage AMELIORE bien le point estime (+12.85 bp OOS contre +4.13 bp non filtre), mais l'IC95 englobe zero AVANT meme de payer les frais. Sur les 12 variantes, 0 a un edge OOS significativement positif apres cout. Permutation p=0.5704, bootstrap n'excluant pas zero, Sharpe OOS 0.0198 sous le seuil degonfle de 0.0343.",
+   "note": "S07 et S09 sont significatives mais NEGATIVES apres cout (-6.24 et -8.07 bp)"
+  },
+  {
+   "id": "SEGMENTATION_DEBLOCAGE",
+   "date": "2026-08-23",
+   "raison": "plafond structurel demontre a 63.0 % avec les donnees observables, 89.1 % meme avec une information non observable. Le seuil de 90 % n'est pas atteignable ; il n'a PAS ete abaisse.",
+   "note": "residu median 0.0031 USD pour un PnL natif median de 1.71 USD : les erreurs sont infimes en valeur absolue mais le gate exige l'exactitude au centime"
+  },
+  {
+   "id": "SWEEP_HORIZON_FIXE",
+   "date": "2026-08-23",
+   "hash": "ee2234f5e8daf3a8405528646d09be4224c2005b9428a4c40bb0771a18d8bb63",
+   "verdict": "INSUFFISANTE, pas refutee",
+   "raison": "H096 (4 jours, sans barriere), choisie sur le train : OOS brut +48.07 bp, net +39.43 bp, tous les criteres passes AVEC recouvrement. Mais en ne gardant qu'un trade par 96 barres et par coin, il reste 1592 observations independantes : net +18.32 bp, IC95 [-15.33, +51.97], p_perm 0.2829. La significativite venait du recouvrement.",
+   "information_manquante": "~5400 trades OOS independants requis contre 1592 disponibles, soit 3.4x. candleSnapshot plafonne a ~4875 barres horaires recentes et la pagination arriere est impossible (verifie)."
+  }
+ ],
+ "fait_notable": "l'edge du Liquidity Sweep EXISTE et bat le hasard de +50.02 bp brut a 4 jours d'horizon, sans barriere. Le point estime survit aux couts (+18.32 bp net sur trades independants). Le seul obstacle restant est le nombre d'observations independantes, et il est chiffre.",
+ "datasets": {
+  "cache_bougies": "177 coins, 1h, ~7 mois",
+  "univers_sweep": 174,
+  "cache_fenetre_native": "5 wallets, fills + funding, fenetre 2026-07-23/08-22",
+  "orders_5m": "16 snapshots de carnet (75 min d'une seule journee) \u2014 INSUFFISANT",
+  "ledger.db": "closed_trades natifs, spend, fenetres a collecter"
+ },
+ "quotas": {
+  "hypertracker": {
+   "par_jour": 100,
+   "consomme": {
+    "2026-08-21": 100,
+    "2026-08-22": 99
+   },
+   "reset": "03:00 UTC",
+   "statut": "epuise le 2026-08-22 (HTTP 429)"
+  },
+  "hyperliquid": "gratuit, limite a ~30 requetes/minute"
+ },
+ "couts_mesures_bp": {
+  "maker": 1.5,
+  "taker": 4.32,
+  "source": "674 fills maker et 6156 fills taker reels de nos wallets natifs"
+ },
+ "hash_preenregistrements": {
+  "liquidity_sweep_12_variantes": "5d1838f8ca8b60a2f8fbb668e1b278312bc5db7d1924513c7b36bbe1e6d4d389",
+  "maker_5_variantes": "d3d5e220dc721bde9c0c73b4d5e29d1352986a0015103149ac1a0e54ad9ab4a4",
+  "selectivite_12_variantes": "a5e831c553eb7190f6a7f6a77ea6840c6d8a0821342ed6ebfa10c18e44282dc2",
+  "horizon_6_variantes": "ee2234f5e8daf3a8405528646d09be4224c2005b9428a4c40bb0771a18d8bb63"
+ },
+ "prochaine_action": "attendre le reset 03:00 UTC, puis laisser l'orchestrateur collecter le top-5 et rendre le verdict scelle. Aucune nouvelle experience.",
+ "interdits": [
+  "abaisser un seuil du FINAL_GATE",
+  "ajouter une variante apres observation",
+  "supposer un fill non demontrable",
+  "depenser du quota HT sans justification",
+  "trading reel"
+ ],
+ "produit": {
+  "moteur": "bayesien empirique hierarchique, variable latente = Sharpe vrai par trade",
+  "wallets_classes": 231,
+  "trades": 35452,
+  "validation_oos": {
+   "spearman": 0.2651,
+   "p_permutation": 0.0012,
+   "bootstrap_ic95": [
+    0.1085,
+    0.4293
+   ],
+   "n": 158
+  },
+  "calibration": {
+   "ece_avant": 0.1402,
+   "ece_apres": 0.0647,
+   "seuil": 0.1
+  },
+  "dashboard": "https://claude.ai/code/artifact/ce715332-04f6-4fa0-a780-27291fa0d639",
+  "statut": "DERIVED valide hors echantillon, confirmation OBSERVED EN ATTENTE"
+ },
+ "branches_abandonnees": [
+  "liquidity sweep",
+  "edge de trading",
+  "execution maker/taker",
+  "selectivite du signal",
+  "horizon fixe",
+  "classement par Sharpe degonfle du maximum"
+ ],
+ "autonomie": {
+  "orchestrateur": "ht/orchestrateur.py \u2014 etat, garde, budget, execution, tests, journal",
+  "gardes": "ht/garde.py \u2014 derive, scelles, seuils, provenance",
+  "budgets": "ht/budgets.py \u2014 HyperTracker, Hyperliquid, CPU, tokens",
+  "quota": "ht/quota.py \u2014 codes de reponse reels, 429 fait autorite",
+  "memoire": [
+   "ht/project_state.json",
+   "tasks.json",
+   "decisions.json",
+   "verdict_observed.json",
+   "produit_classement.json"
+  ]
+ }
+}

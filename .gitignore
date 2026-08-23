@@ -1,0 +1,12 @@
+data/
+blobs/
+*.db
+*.db-wal
+*.db-shm
+*.parquet
+*.part
+.env
+__pycache__/
+*.pyc
+.venv/
+*.bak
