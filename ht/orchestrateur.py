@@ -1,20 +1,30 @@
 #!/usr/bin/env python3
 """
-ORCHESTRATEUR. Lit l'etat, choisit la tache la plus rentable EXECUTABLE, l'execute,
-la teste, la fait auditer, journalise, met a jour l'etat, recommence.
+ORCHESTRATEUR. Analyse l'etat, planifie depuis les verrous, arbitre, execute, teste,
+audite, journalise, recommence.
 
 Les huit roles demandes (data, quant, research, code, auditor, product, infra) ne sont
 pas huit processus : ce seraient huit facons de dupliquer des capacites deja presentes.
-Ils sont ici des TYPES DE TACHE, executes par une boucle unique, avec une seule
-separation reellement necessaire — l'AUDIT, qui doit pouvoir bloquer et donc ne peut pas
-etre juge par celui qui produit.
+Ils sont des TYPES DE TACHE executes par une boucle unique, avec une seule separation
+reellement necessaire — l'AUDIT, qui doit pouvoir bloquer et ne peut donc pas etre juge
+par celui qui produit.
 
-Reprise : tout est sur disque. Un crash, un redemarrage, une session Claude differente
-reprennent a la tache suivante sans rien reconstruire, parce qu'aucun etat ne vit en
-memoire.
+Trois protections contre l'emballement, parce qu'un systeme autonome se trompe vite :
 
-    python -m ht.orchestrateur          # un cycle
-    python -m ht.orchestrateur --boucle # jusqu'a epuisement des taches executables
+  BOUCLE      une tache qui echoue deux fois pour le MEME motif est marquee BLOQUEE et
+              n'est plus proposee. Reessayer un troisieme fois ne serait pas de la
+              tenacite, seulement du gaspillage.
+  STAGNATION  plusieurs cycles consecutifs sans progres arretent la boucle avec un
+              diagnostic, au lieu de consommer des tokens indefiniment.
+  FRONTIERE   un verrou sans patron de tache connu produit un diagnostic, jamais une
+              tache improvisee. C'est la limite assumee de l'autonomie.
+
+Reprise : rien ne vit en memoire. Un crash, un redemarrage ou une session differente
+repartent du disque.
+
+    python -m ht.orchestrateur           # un cycle
+    python -m ht.orchestrateur --boucle  # jusqu'a blocage, stagnation ou epuisement
+    python -m ht.orchestrateur --sec     # a blanc : decide sans rien executer
 """
 from __future__ import annotations
 
@@ -25,44 +35,57 @@ import sys
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
-from typing import Callable
 
 from . import budgets as B
 from . import garde as G
+from . import planificateur as P
 
 DATA = os.environ.get("HT_DATA_ROOT", r"C:\Users\maram\ht_data")
 RACINE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ETAT = os.path.join(RACINE, "ht", "project_state.json")
 TACHES = os.path.join(DATA, "tasks.json")
 DECISIONS = os.path.join(DATA, "decisions.json")
+CYCLES = os.path.join(DATA, "cycles.json")
 
-
-@dataclass
-class Tache:
-    id: str
-    objectif: str
-    type: str                       # data | quant | audit | produit | infra
-    cout: B.Cout
-    roi: float
-    executer: Callable[[], dict] = field(repr=False, default=None)
-    tests: tuple[str, ...] = ()
-    depend_de: tuple[str, ...] = ()
+ECHECS_AVANT_BLOCAGE = 2        # deux fois le meme motif suffisent a conclure
+CYCLES_SANS_PROGRES_MAX = 3
 
 
 @dataclass
 class Resultat:
     tache: str
     objectif: str
-    decision: str                   # EXECUTEE | REFUSEE | BLOQUEE | ECHEC
+    decision: str                   # EXECUTEE | REFUSEE | BLOQUEE | ECHEC | STAGNATION
     motif: str
+    raison: str = ""
     sortie: dict = field(default_factory=dict)
     tests: str = ""
+    audit: str = ""
     cout: dict = field(default_factory=dict)
+    etat_avant: str = ""
+    etat_apres: str = ""
     horodatage: str = ""
     prochaine: str = ""
+    blocage: str = ""
 
     def as_dict(self) -> dict:
         return asdict(self)
+
+    def journal(self, n: int) -> str:
+        l = [f"CYCLE            {n}",
+             f"OBJECTIF         {self.objectif}",
+             f"TACHE CHOISIE    {self.tache}",
+             f"RAISON           {self.raison or '—'}",
+             f"COUT             {self.cout or '—'}",
+             f"RESULTAT         {self.decision} — {self.motif[:120]}",
+             f"TESTS            {self.tests or '—'}",
+             f"AUDIT            {self.audit or '—'}",
+             f"ETAT AVANT       {self.etat_avant or '—'}",
+             f"ETAT APRES       {self.etat_apres or '—'}",
+             f"PROCHAINE TACHE  {self.prochaine or '—'}"]
+        if self.blocage:
+            l.append(f"BLOCAGE          {self.blocage}")
+        return "\n".join(l)
 
 
 # --------------------------------------------------------------------------- etat
@@ -77,23 +100,65 @@ def ecrire_etat(e: dict) -> None:
         json.dump(e, f, indent=1, ensure_ascii=True)
 
 
+def _lire(chemin: str) -> list:
+    if not os.path.exists(chemin):
+        return []
+    try:
+        return json.load(open(chemin))
+    except Exception:
+        return []
+
+
 def _ajouter(chemin: str, ligne: dict) -> None:
-    d = []
-    if os.path.exists(chemin):
-        try:
-            d = json.load(open(chemin))
-        except Exception:
-            d = []
+    d = _lire(chemin)
     d.append(ligne)
     with open(chemin, "w") as f:
         json.dump(d, f, indent=1, ensure_ascii=True)
 
 
-# ------------------------------------------------------------------------- taches
+def _empreinte_etat(e: dict) -> str:
+    """Resume court de l'etat, pour rendre le progres visible d'un cycle a l'autre."""
+    ouverts = [v.get("id") for v in e.get("verrous", [])
+               if "FERME" not in str(v.get("statut", "")).upper()]
+    return f"{e.get('progression_pct', '?')}% | verrous ouverts: {', '.join(ouverts) or 'aucun'}"
+
+
+# ------------------------------------------------------------------------- boucles
+def taches_bloquees() -> dict[str, str]:
+    """
+    Taches ayant echoue ECHECS_AVANT_BLOCAGE fois pour le meme motif.
+
+    Le motif est normalise sur ses premiers mots : deux echecs identiques a un
+    horodatage pres doivent compter comme deux echecs identiques.
+    """
+    compte: dict[tuple[str, str], int] = {}
+    for d in _lire(DECISIONS):
+        if d.get("decision") not in ("ECHEC", "BLOQUEE"):
+            continue
+        cle = (d.get("tache", ""), " ".join(str(d.get("motif", "")).split()[:6]))
+        compte[cle] = compte.get(cle, 0) + 1
+    return {t: m for (t, m), n in compte.items() if n >= ECHECS_AVANT_BLOCAGE}
+
+
+def stagnation() -> bool:
+    """
+    Plusieurs cycles consecutifs sans CHANGEMENT D'ETAT.
+
+    Le progres ne se mesure pas au succes d'execution. Une tache perenne qui reussit
+    a chaque tour sans rien deplacer produit des cycles verts et zero avancement :
+    mesure reelle, la boucle a tourne 20 fois sur le meme audit avant que ce critere
+    ne soit corrige. Ce qui compte est l'empreinte de l'etat avant et apres.
+    """
+    recents = _lire(CYCLES)[-CYCLES_SANS_PROGRES_MAX:]
+    if len(recents) < CYCLES_SANS_PROGRES_MAX:
+        return False
+    return all(c.get("etat_avant") == c.get("etat_apres") for c in recents)
+
+
+# ---------------------------------------------------------------------- executeurs
 def _t_collecte_observed() -> dict:
     from . import run_plan as RP
-    n = RP.etape_top5(min(30, B.etat().ht_restant))
-    return {"fenetres_collectees": n}
+    return {"fenetres_collectees": RP.etape_top5(min(30, B.etat().ht_restant))}
 
 
 def _t_verdict_observed() -> dict:
@@ -113,58 +178,42 @@ def _t_rafraichir_produit() -> dict:
 
 
 def _t_audit_integrite() -> dict:
-    v = G.controler("audit d'integrite du classement et des scelles")
+    v = G.controler("audit d'integrite du classement de wallets et des scelles")
     return {"autorise": v.autorise, "motifs": v.motifs}
 
 
-def registre(e: dict) -> list[Tache]:
-    """
-    Taches candidates, avec leur precondition implicite.
-
-    Elles ne sont PAS des idees de recherche : chacune fait avancer le produit d'un cran
-    identifie. Une tache qui ne rentre dans aucun de ces moules doit etre discutee, pas
-    inventee par la boucle.
-    """
-    natifs = _n_natifs_top5()
-    t = []
-    if natifs < 5:
-        t.append(Tache(
-            id="collecte_observed_top5",
-            objectif="collecter les closed-trades OBSERVED natifs du top-5 du classement",
-            type="data", cout=B.Cout(hypertracker=5, cpu_s=60), roi=10.0,
-            executer=_t_collecte_observed))
-    t.append(Tache(
-        id="verdict_observed",
-        objectif="appliquer le protocole scelle et rendre le verdict OBSERVED du classement",
-        type="quant", cout=B.Cout(cpu_s=30), roi=8.0,
-        executer=_t_verdict_observed, depend_de=("collecte_observed_top5",)))
-    t.append(Tache(
-        id="audit_integrite",
-        objectif="auditer l'integrite des scelles, des seuils et du classement",
-        type="audit", cout=B.Cout(cpu_s=20), roi=3.0,
-        executer=_t_audit_integrite, tests=("tests/test_run_plan_top5.py",)))
-    t.append(Tache(
-        id="rafraichir_produit",
-        objectif="rafraichir le produit de classement des wallets et son dashboard",
-        type="produit", cout=B.Cout(cpu_s=30), roi=2.0,
-        executer=_t_rafraichir_produit))
-    return t
+def _t_isoler_crash() -> dict:
+    """Reproduit le crash natif dans un sous-processus isole et en garde la trace.
+    Un acces violation tue l'interpreteur : il ne peut donc pas etre attrape en
+    Python, seulement observe depuis l'exterieur."""
+    p = subprocess.run([sys.executable, "-m", "pytest", "tests/test_elite.py",
+                        "-q", "--no-header", "-p", "no:cacheprovider", "-x"],
+                       capture_output=True, text=True, cwd=RACINE, timeout=300)
+    s = (p.stdout or "") + (p.stderr or "")
+    lignes = [l for l in s.splitlines()
+              if "Windows fatal" in l or ".py\", line" in l or "in " in l][:12]
+    chemin = os.path.join(DATA, "diagnostic_crash_behavior.txt")
+    with open(chemin, "w", encoding="utf8") as f:
+        f.write(s)
+    return {"code_retour": p.returncode, "trace": lignes[:6], "rapport": chemin}
 
 
-def _n_natifs_top5() -> int:
-    """Combien de wallets du top-5 ont deja des natifs exploitables."""
-    import sqlite3
-    p = os.path.join(DATA, "preenregistrement_observed.json")
-    if not os.path.exists(p):
-        return 0
-    top5 = [a.lower() for a in json.load(open(p))["top5"]]
-    try:
-        c = sqlite3.connect(os.path.join(DATA, "ledger.db"))
-        vus = {r[0].lower() for r in
-               c.execute("SELECT DISTINCT address FROM closed_trades_natifs")}
-    except Exception:
-        return 0
-    return sum(1 for a in top5 if a in vus)
+EXECUTEURS = {
+    "_t_collecte_observed": _t_collecte_observed,
+    "_t_verdict_observed": _t_verdict_observed,
+    "_t_rafraichir_produit": _t_rafraichir_produit,
+    "_t_audit_integrite": _t_audit_integrite,
+    "_t_isoler_crash": _t_isoler_crash,
+}
+
+# L'audit ne lance PAS tests/test_autonomie.py : ce fichier execute des cycles, qui
+# relanceraient pytest sur lui-meme. On lui associe les tests du chemin produit, qui
+# sont ceux dont la rupture invaliderait reellement l'audit.
+TESTS_PAR_TACHE = {
+    "audit_integrite": ("tests/test_gate.py", "tests/test_final_gate.py"),
+    "collecte_observed_top5": ("tests/test_run_plan_top5.py",),
+    "verdict_observed": ("tests/test_run_plan_top5.py",),
+}
 
 
 # -------------------------------------------------------------------------- tests
@@ -173,98 +222,130 @@ def lancer_tests(chemins: tuple[str, ...]) -> tuple[bool, str]:
         return True, "aucun test associe"
     p = subprocess.run([sys.executable, "-m", "pytest", *chemins, "-q", "--no-header",
                         "-p", "no:cacheprovider"],
-                       capture_output=True, text=True, cwd=RACINE, timeout=600)
-    derniere = (p.stdout or p.stderr or "").strip().splitlines()
-    return p.returncode == 0, (derniere[-1] if derniere else "sans sortie")
+                       capture_output=True, text=True, cwd=RACINE, timeout=900)
+    lignes = (p.stdout or p.stderr or "").strip().splitlines()
+    return p.returncode == 0, (lignes[-1] if lignes else "sans sortie")
 
 
 # -------------------------------------------------------------------------- cycle
-def cycle(*, sec: bool = False) -> Resultat:
-    """
-    Un tour complet : etat -> garde -> budget -> execution -> tests -> audit -> journal.
-
-    `sec` (a blanc) parcourt toute la chaine de decision sans rien executer : c'est ainsi
-    qu'on verifie l'orchestrateur sans depenser de quota.
-    """
+def cycle(*, sec: bool = False, ignorer_stagnation: bool = False) -> Resultat:
     e = charger_etat()
-    faits = {t.id for t in []}
-    candidates = registre(e)
+    avant = _empreinte_etat(e)
 
-    # 1. GARDE — avant tout, avant meme de regarder le budget.
-    integrite = G.verifier_scelles()
-    seuils = G.verifier_seuils()
+    # 1. GARDE — avant le budget, avant la selection.
+    integrite, seuils = G.verifier_scelles(), G.verifier_seuils()
     if not (integrite and seuils):
         r = Resultat("(aucune)", "controle d'integrite", "BLOQUEE",
                      " | ".join(integrite.motifs + seuils.motifs),
-                     horodatage=_now(), prochaine="reparer l'integrite avant toute tache")
+                     audit="integrite ROMPUE", etat_avant=avant, etat_apres=avant,
+                     horodatage=_now(),
+                     prochaine="reparer l'integrite avant toute autre tache",
+                     blocage="sceau ou seuil modifie")
         _journaliser(r)
         return r
 
-    # 2. SELECTION — la plus rentable parmi les executables.
+    # 2. STAGNATION — arrete la BOUCLE, pas une invocation deliberee.
+    # Une garde sans porte de sortie transformerait un blocage passager en blocage
+    # definitif : apres correction de la cause, le systeme doit pouvoir retenter.
+    if stagnation() and not ignorer_stagnation:
+        r = Resultat("(aucune)", "diagnostic de stagnation", "STAGNATION",
+                     f"{CYCLES_SANS_PROGRES_MAX} cycles consecutifs sans changement d'etat",
+                     etat_avant=avant, etat_apres=avant, horodatage=_now(),
+                     prochaine="intervention humaine ou attente d'un evenement externe",
+                     blocage=_diagnostic_stagnation())
+        _journaliser(r)
+        return r
+
+    # 3. PLANIFICATION — depuis les verrous, jamais improvisee.
+    cands, diags = P.planifier(e)
+    P.journaliser_plan(cands, diags)
+    bloquees = taches_bloquees()
+
+    # 4. ARBITRAGE
     ev = B.etat()
-    refus = []
-    retenue = None
-    for t in sorted(candidates, key=lambda x: -x.roi):
-        vd = G.verifier_derive(t.objectif)
+    refus, retenue = list(diags), None
+    ids = {c.id for c in cands}
+    for c in sorted(cands, key=lambda x: -x.roi):
+        if c.id in bloquees:
+            refus.append(f"{c.id}: BLOQUEE — {bloquees[c.id]}")
+            continue
+        vd = G.verifier_derive(c.objectif)
         if not vd:
-            refus.append(f"{t.id}: {vd.motifs[0]}")
+            refus.append(f"{c.id}: {vd.motifs[0]}")
             continue
-        if t.depend_de and any(d in {c.id for c in candidates} for d in t.depend_de):
-            refus.append(f"{t.id}: attend {', '.join(t.depend_de)}")
+        if c.executeur not in EXECUTEURS:
+            refus.append(f"{c.id}: aucun executeur lie — a instruire manuellement")
             continue
-        ok, motif = B.autorise(t.cout, t.roi, e=ev)
+        if any(d in ids and d not in bloquees for d in c.depend_de):
+            refus.append(f"{c.id}: attend {', '.join(c.depend_de)}")
+            continue
+        ok, motif = B.autorise(c.cout, c.roi, e=ev)
         if not ok:
-            refus.append(f"{t.id}: {motif}")
+            refus.append(f"{c.id}: {motif}")
             continue
-        retenue = t
+        retenue = c
         break
 
-    # Les refus sont journalises AUSSI : sans eux, une session future ne peut pas
-    # savoir qu'une tache a fort ROI existait mais que le quota la bloquait.
     for m in refus:
         _ajouter(DECISIONS, {"horodatage": _now(), "tache": m.split(":")[0],
-                             "decision": "NON_RETENUE", "motif": m.split(": ", 1)[-1],
-                             "prochaine": ""})
+                             "decision": "NON_RETENUE",
+                             "motif": m.split(": ", 1)[-1], "prochaine": ""})
 
     if retenue is None:
         r = Resultat("(aucune)", "aucune tache executable", "REFUSEE",
-                     " | ".join(refus) or "registre vide", horodatage=_now(),
-                     prochaine="attendre le reset du quota ou un evenement rendant "
-                               "une tache executable")
+                     " | ".join(refus) or "aucun candidat",
+                     etat_avant=avant, etat_apres=avant, horodatage=_now(),
+                     prochaine="attendre le reset du quota ou un evenement declencheur")
         _journaliser(r)
         return r
 
     if sec:
         r = Resultat(retenue.id, retenue.objectif, "REFUSEE", "execution a blanc",
-                     cout=retenue.cout.as_dict(), horodatage=_now(),
+                     raison=retenue.raison, cout=retenue.cout.as_dict(),
+                     etat_avant=avant, etat_apres=avant, horodatage=_now(),
                      prochaine="relancer sans --sec")
         _journaliser(r)
         return r
 
-    # 3. EXECUTION
+    # 5. EXECUTION
     t0 = time.time()
     try:
-        sortie = retenue.executer() or {}
+        sortie = EXECUTEURS[retenue.executeur]() or {}
         decision, motif = "EXECUTEE", "sans erreur"
     except Exception as ex:
         sortie, decision, motif = {}, "ECHEC", f"{type(ex).__name__}: {ex}"
 
-    # 4. TESTS — un echec transforme l'execution en echec, quoi qu'elle ait produit.
-    ok_tests, sortie_tests = lancer_tests(retenue.tests)
+    # 6. TESTS — un echec transforme l'execution en echec, quoi qu'elle ait produit.
+    ok_tests, sortie_tests = lancer_tests(TESTS_PAR_TACHE.get(retenue.id, ()))
     if not ok_tests:
         decision, motif = "ECHEC", f"tests rouges : {sortie_tests}"
 
-    r = Resultat(retenue.id, retenue.objectif, decision, motif, sortie=sortie,
-                 tests=sortie_tests, cout=retenue.cout.as_dict(), horodatage=_now(),
-                 prochaine=_prochaine(sortie))
-    r.cout["cpu_s_reel"] = round(time.time() - t0, 1)
-    _journaliser(r)
+    # 7. AUDIT — independant de l'execution.
+    a = G.controler(retenue.objectif)
+    if not a:
+        decision, motif = "ECHEC", f"audit refuse : {a.motifs[0]}"
 
-    # 5. ETAT — mis a jour seulement si la tache a reussi.
+    r = Resultat(retenue.id, retenue.objectif, decision, motif, raison=retenue.raison,
+                 sortie=sortie, tests=sortie_tests, audit=a.resume()[:80],
+                 cout=dict(retenue.cout.as_dict(), cpu_s_reel=round(time.time() - t0, 1)),
+                 etat_avant=avant, horodatage=_now(), prochaine=_prochaine(sortie))
+
     if decision == "EXECUTEE":
         e["prochaine_action"] = r.prochaine or e.get("prochaine_action", "")
         ecrire_etat(e)
+    r.etat_apres = _empreinte_etat(charger_etat())
+    _journaliser(r)
     return r
+
+
+def _diagnostic_stagnation() -> str:
+    """Nommer ce qui a tourne sans effet : un diagnostic doit designer, pas resumer."""
+    recents = _lire(CYCLES)[-CYCLES_SANS_PROGRES_MAX:]
+    taches = [c.get("tache", "?") for c in recents]
+    etat = recents[-1].get("etat_apres", "?") if recents else "?"
+    return (f"taches sans effet : {', '.join(taches)} | etat inchange : {etat} | "
+            f"aucune tache du registre ne peut deplacer cet etat sans une ressource "
+            f"actuellement indisponible")
 
 
 def _now() -> str:
@@ -272,10 +353,11 @@ def _now() -> str:
 
 
 def _prochaine(sortie: dict) -> str:
-    if sortie.get("verdict") == "VALIDE":
-        return "publier le produit certifie et figer le classement"
-    if sortie.get("verdict") in ("REFUSE", "INCONCLUSIF"):
-        return f"verdict {sortie['verdict']} : documenter, ne pas relancer d'experience"
+    v = sortie.get("verdict")
+    if v == "VALIDE":
+        return "publier le classement certifie et figer le produit"
+    if v in ("REFUSE", "INCONCLUSIF"):
+        return f"verdict {v} : documenter, ne relancer aucune experience"
     if sortie.get("fenetres_collectees"):
         return "appliquer le protocole scelle sur les natifs collectes"
     return ""
@@ -283,6 +365,9 @@ def _prochaine(sortie: dict) -> str:
 
 def _journaliser(r: Resultat) -> None:
     _ajouter(TACHES, r.as_dict())
+    _ajouter(CYCLES, {"horodatage": r.horodatage, "tache": r.tache,
+                      "decision": r.decision, "motif": r.motif,
+                      "etat_avant": r.etat_avant, "etat_apres": r.etat_apres})
     _ajouter(DECISIONS, {"horodatage": r.horodatage, "tache": r.tache,
                          "decision": r.decision, "motif": r.motif,
                          "prochaine": r.prochaine})
@@ -290,18 +375,16 @@ def _journaliser(r: Resultat) -> None:
 
 def main(argv=None) -> int:
     a = argv if argv is not None else sys.argv[1:]
-    sec = "--sec" in a
-    boucle = "--boucle" in a
+    sec, boucle = "--sec" in a, "--boucle" in a
     n = 0
     while True:
-        r = cycle(sec=sec)
+        # le premier tour est toujours tente : c'est la porte de sortie de la
+        # garde anti-stagnation. Les suivants la respectent.
+        r = cycle(sec=sec, ignorer_stagnation=(n == 0))
         n += 1
-        print(f"[{n}] {r.tache} — {r.decision} — {r.motif[:150]}")
-        if r.sortie:
-            print(f"     sortie : {r.sortie}")
-        if r.prochaine:
-            print(f"     prochaine : {r.prochaine}")
-        if not boucle or r.decision in ("REFUSEE", "BLOQUEE", "ECHEC") or n >= 20:
+        print(r.journal(n))
+        print("-" * 72)
+        if not boucle or r.decision in ("REFUSEE", "BLOQUEE", "STAGNATION") or n >= 20:
             break
     return 0
 
