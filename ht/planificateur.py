@@ -193,6 +193,37 @@ def planifier(etat: dict) -> tuple[list[Candidate], list[str]]:
     return cands, diags
 
 
+def deleguer_diagnostics(diags: list[str]) -> list[Candidate]:
+    """
+    Transforme un verrou sans patron en tache DELEGUEE.
+
+    C'est la ou l'autonomie gagne du terrain sans perdre en surete : plutot que de
+    laisser le verrou dormir dans un diagnostic, on demande a Claude de l'instruire
+    — constater, mesurer, proposer un patron. La proposition reste une proposition :
+    aucun patron n'entre dans PATRONS sans relecture.
+    """
+    out = []
+    for i, d in enumerate(diags):
+        verrou = d.split("'")[1] if "'" in d else f"inconnu_{i}"
+        out.append(Candidate(
+            id=f"instruire_{verrou.lower()}", verrou=verrou,
+            objectif=f"instruire le verrou {verrou} du classement de wallets",
+            raison=(f"Le verrou {verrou} est enregistre dans project_state.json mais "
+                    f"aucun patron de tache ne lui correspond. Constate son etat reel "
+                    f"a partir des fichiers du projet, mesure ce qui manque, et propose "
+                    f"un patron de tache exploitable. Ne modifie rien."),
+            type="research",
+            fichiers=("ht/project_state.json", "ht/planificateur.py"),
+            depend_de=(),
+            cout=B.Cout(cpu_s=600, tokens_k=40), roi=1.5,
+            gain="un verrou dormant devient instruit et planifiable",
+            risque="delegation a un modele : gardes appliquees au prompt ET a la sortie",
+            condition_succes="un patron de tache est propose et argumente",
+            condition_arret="deux tentatives sans proposition exploitable",
+            executeur="_t_deleguer"))
+    return out
+
+
 def journaliser_plan(cands: list[Candidate], diags: list[str],
                      chemin: str | None = None) -> str:
     p = chemin or os.path.join(DATA, "plan.json")

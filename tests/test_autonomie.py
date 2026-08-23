@@ -290,3 +290,56 @@ def test_le_journal_de_cycle_est_complet(bac):
     for champ in ("CYCLE", "OBJECTIF", "TACHE CHOISIE", "RAISON", "COUT", "RESULTAT",
                   "TESTS", "AUDIT", "ETAT AVANT", "ETAT APRES", "PROCHAINE TACHE"):
         assert champ in j, f"champ manquant du journal : {champ}"
+
+
+# ---------------------------------------------------------------- delegation
+def test_la_delegation_refuse_avant_denvoyer(tmp_path, monkeypatch):
+    """On ne compte pas sur le modele pour refuser une derive : on ne lui en
+    donne pas l'occasion."""
+    import ht.delegation as D
+    monkeypatch.setattr(D, "JOURNAL", str(tmp_path / "delegations.json"))
+    appele = []
+    d = D.deleguer("optimiser le TP/SL du liquidity sweep", "peu importe",
+                   executeur=lambda cmd: appele.append(cmd) or (0, "ok"))
+    assert not d.accepte
+    assert "avant envoi" in d.motif
+    assert appele == [], "un prompt derive a ete envoye au modele"
+
+
+def test_la_delegation_rejette_une_sortie_derivee(tmp_path, monkeypatch):
+    """La garde s'applique aussi au RESULTAT : un agent qui repart vers
+    l'abandonne ne voit pas sa sortie integree."""
+    import ht.delegation as D
+    monkeypatch.setattr(D, "JOURNAL", str(tmp_path / "delegations.json"))
+    d = D.deleguer("instruire un verrou du classement de wallets", "consigne",
+                   executeur=lambda cmd: (0, "je propose d'optimiser le liquidity sweep"))
+    assert not d.accepte and "rejetee" in d.motif
+
+
+def test_la_delegation_accepte_une_sortie_conforme(tmp_path, monkeypatch):
+    import ht.delegation as D
+    monkeypatch.setattr(D, "JOURNAL", str(tmp_path / "delegations.json"))
+    d = D.deleguer("instruire un verrou du classement de wallets", "consigne",
+                   executeur=lambda cmd: (0, "le verrou porte sur la collecte de wallets"))
+    assert d.accepte and d.sortie
+
+
+def test_la_delegation_est_bornee_en_tours(tmp_path, monkeypatch):
+    """Un agent autonome sans borne de tours peut couter n'importe quoi."""
+    import ht.delegation as D
+    monkeypatch.setattr(D, "JOURNAL", str(tmp_path / "delegations.json"))
+    vu = {}
+    D.deleguer("auditer le classement de wallets", "c",
+               executeur=lambda cmd: vu.update(cmd=cmd) or (0, "ok"))
+    assert "--max-turns" in vu["cmd"]
+    assert "--permission-mode" in vu["cmd"], "ecriture autorisee par defaut"
+
+
+def test_un_verrou_sans_patron_devient_une_tache_deleguee():
+    """La frontiere de l'autonomie se deplace : le verrou dormant est instruit."""
+    import ht.planificateur as P
+    c, d = P.planifier({"verrous": [{"id": "VERROU_INEDIT", "statut": "OUVERT"}]})
+    dele = P.deleguer_diagnostics(d)
+    assert dele and dele[0].executeur == "_t_deleguer"
+    assert "VERROU_INEDIT" in dele[0].verrou
+    assert dele[0].condition_arret and dele[0].risque

@@ -198,7 +198,18 @@ def _t_isoler_crash() -> dict:
     return {"code_retour": p.returncode, "trace": lignes[:6], "rapport": chemin}
 
 
+def _t_deleguer(consigne: str = "", objectif: str = "") -> dict:
+    """Confie a Claude Code une tache demandant du jugement. Les gardes s'appliquent
+    au prompt AVANT envoi et a la sortie APRES : la delegation n'est pas un
+    contournement de l'anti-derive, elle passe par lui deux fois."""
+    from . import delegation as D
+    d = D.deleguer(objectif or consigne, consigne)
+    return {"delegue": True, "accepte": d.accepte, "motif": d.motif,
+            "duree_s": d.duree_s, "extrait": (d.sortie or "")[:400]}
+
+
 EXECUTEURS = {
+    "_t_deleguer": _t_deleguer,
     "_t_collecte_observed": _t_collecte_observed,
     "_t_verdict_observed": _t_verdict_observed,
     "_t_rafraichir_produit": _t_rafraichir_produit,
@@ -258,6 +269,10 @@ def cycle(*, sec: bool = False, ignorer_stagnation: bool = False) -> Resultat:
 
     # 3. PLANIFICATION — depuis les verrous, jamais improvisee.
     cands, diags = P.planifier(e)
+    # La frontiere de l'autonomie se deplace ici : un verrou sans patron connu ne
+    # reste plus un simple diagnostic, il devient une tache DELEGUEE. Claude
+    # l'instruit et propose un patron ; il ne l'execute pas de sa propre initiative.
+    cands.extend(P.deleguer_diagnostics(diags))
     P.journaliser_plan(cands, diags)
     bloquees = taches_bloquees()
 
@@ -310,7 +325,9 @@ def cycle(*, sec: bool = False, ignorer_stagnation: bool = False) -> Resultat:
     # 5. EXECUTION
     t0 = time.time()
     try:
-        sortie = EXECUTEURS[retenue.executeur]() or {}
+        fn = EXECUTEURS[retenue.executeur]
+        sortie = (fn(consigne=retenue.raison, objectif=retenue.objectif)
+                  if retenue.executeur == "_t_deleguer" else fn()) or {}
         decision, motif = "EXECUTEE", "sans erreur"
     except Exception as ex:
         sortie, decision, motif = {}, "ECHEC", f"{type(ex).__name__}: {ex}"

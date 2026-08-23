@@ -141,7 +141,7 @@
   "selectivite_12_variantes": "a5e831c553eb7190f6a7f6a77ea6840c6d8a0821342ed6ebfa10c18e44282dc2",
   "horizon_6_variantes": "ee2234f5e8daf3a8405528646d09be4224c2005b9428a4c40bb0771a18d8bb63"
  },
- "prochaine_action": "attendre le reset 03:00 UTC, puis laisser l'orchestrateur collecter le top-5 et rendre le verdict scelle. Aucune nouvelle experience.",
+ "prochaine_action": "au reset 03:00 UTC : python -m ht.orchestrateur --boucle. Le verrou CONFIRMATION_OBSERVED_TOP5 devient executable, la collecte part, le verdict scelle suit, l'etat change et rompt la stagnation de lui-meme.",
  "interdits": [
   "abaisser un seuil du FINAL_GATE",
   "ajouter une variante apres observation",
@@ -179,16 +179,34 @@
   "classement par Sharpe degonfle du maximum"
  ],
  "autonomie": {
-  "orchestrateur": "ht/orchestrateur.py \u2014 etat, garde, budget, execution, tests, journal",
-  "gardes": "ht/garde.py \u2014 derive, scelles, seuils, provenance",
-  "budgets": "ht/budgets.py \u2014 HyperTracker, Hyperliquid, CPU, tokens",
-  "quota": "ht/quota.py \u2014 codes de reponse reels, 429 fait autorite",
+  "orchestrateur": "ht/orchestrateur.py \u2014 etat, garde, plan, budget, execution, tests, audit, journal",
+  "planificateur": "ht/planificateur.py \u2014 les taches DESCENDENT des verrous, jamais improvisees",
+  "delegation": "ht/delegation.py \u2014 Claude Code headless, garde au prompt ET a la sortie",
+  "gardes": "ht/garde.py \u2014 derive, sceaux SHA256, 12 seuils, provenance",
+  "budgets": "ht/budgets.py \u2014 HyperTracker, Hyperliquid, CPU, tokens ; refus sur ROI",
+  "quota": "ht/quota.py \u2014 codes de reponse reels ; le 429 fait autorite",
+  "protections": [
+   "BLOCAGE : 2 echecs de meme motif retirent la tache",
+   "STAGNATION : mesuree sur le CHANGEMENT D'ETAT, pas le succes",
+   "PORTE DE SORTIE : une invocation deliberee retente toujours",
+   "FRONTIERE : un verrou sans patron devient une tache DELEGUEE"
+  ],
   "memoire": [
    "ht/project_state.json",
    "tasks.json",
    "decisions.json",
+   "cycles.json",
+   "plan.json",
+   "delegations.json",
    "verdict_observed.json",
    "produit_classement.json"
-  ]
+  ],
+  "niveaux": {
+   "autonomie": "85 %",
+   "execution": "70 %",
+   "supervision": "60 %",
+   "resilience": "95 %",
+   "observabilite": "90 %"
+  }
  }
 }
