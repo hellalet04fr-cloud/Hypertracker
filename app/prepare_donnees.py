@@ -10,6 +10,11 @@ CAL = json.load(open(os.path.join(D, "resultat_calibration.json")))
 CMP = json.load(open(os.path.join(D, "comparaison_modeles.json")))
 OBS = {x["adresse"].lower(): x for x in VER["detail"]}
 
+# Reference de fraicheur : la derniere activite observee dans TOUT le jeu de donnees.
+# On ne compare pas a l'horloge : les series sont figees a leur date de collecte, et
+# mesurer l'inactivite contre « maintenant » vieillirait artificiellement tout le monde.
+REF = max(max(t["close"] for t in v) for v in SER.values() if v)
+
 # RESOLUTION PLEINE. Mesure : a 56 points sur tout l'historique, 167 wallets sur 231
 # n'avaient plus qu'UN point sur 7 jours et 118 n'en avaient que deux sur 30 jours.
 # Le filtre de periode etait donc decoratif. A 240 points, la moyenne de 153 trades
@@ -68,6 +73,13 @@ def prepare(a, w):
     out["vol"] = round(st.pstdev(r), 2) if len(r) > 1 else None
     out["t0"] = tr[0]["close"]
     out["t1"] = tr[-1]["close"]
+    # ACTIVITE RECENTE. Le score mesure une performance passee et ignore la fraicheur :
+    # un wallet excellent puis arrete garde son rang. Mesure sur le classement livre,
+    # 9 des 20 premiers n'avaient fait AUCUN trade en 30 jours. L'activite devient donc
+    # une dimension a part entiere, a cote du score — elle ne le modifie pas.
+    out["r30"] = sum(1 for t in tr if t["close"] >= REF - 30 * 86400000)
+    out["r7"] = sum(1 for t in tr if t["close"] >= REF - 7 * 86400000)
+    out["dort_j"] = round((REF - tr[-1]["close"]) / 86400000, 1)
 
     # courbe d'equity : PnL cumule, sous-echantillonnee
     c, eq = 0.0, []
@@ -125,6 +137,15 @@ def analyser(w):
                        f"({w['sr']:.2f} → {w['post']:.2f})")
     if w["pnl"] is not None and w["dd"] and w["pnl"] > 0 and w["dd"] > abs(w["pnl"]):
         risques.append(f"Drawdown ({w['dd']:.0f}) supérieur au PnL total ({w['pnl']:.0f})")
+    if w.get("r30", 0) >= 20: forts.append(f"Tres actif — {w['r30']} trades sur 30 jours")
+    elif w.get("r30", 0) >= 5: forts.append(f"Actif — {w['r30']} trades sur 30 jours")
+    if w.get("dort_j") is not None:
+        if w["dort_j"] > 90:
+            faibles.append(f"Inactif depuis {w['dort_j']:.0f} jours")
+            risques.append("Wallet dormant : la performance passee ne dit rien de "
+                           "ce qu'il ferait aujourd'hui")
+        elif w["dort_j"] > 30:
+            faibles.append(f"Peu actif — dernier trade il y a {w['dort_j']:.0f} jours")
     o = w.get("obs")
     if o is None:
         risques.append("Aucune donnée native HyperTracker : classement DERIVED uniquement")

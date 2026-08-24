@@ -99,7 +99,10 @@ input[type=range]{width:100%;accent-color:var(--acc);height:26px}
 .plus span{font:500 12px "IBM Plex Mono",monospace;color:var(--faint)}
 .plus:active{background:var(--surf2)}
 .fin{text-align:center;padding:18px;font:500 12px "IBM Plex Mono",monospace;color:var(--faint)}
-.dort{color:var(--warn)}
+.act{font:600 11px "IBM Plex Mono",monospace;letter-spacing:.01em}
+.act.vif{color:var(--pos)}
+.act.lent{color:var(--soft)}
+.act.mort{color:var(--warn)}
 .card.top{border-color:#2d5b8f}
 .chead{display:flex;align-items:flex-start;gap:11px;margin-bottom:12px}
 .rank{flex:0 0 auto;width:34px;height:34px;border-radius:9px;background:var(--surf3);
@@ -330,14 +333,27 @@ function statut(w){
 /* ---------- tri et filtres ---------- */
 const SORTS = [
   ['score', 'Top score',   (a,b) => b.score - a.score],
+  ['actif', 'Plus actifs', (a,b) => b.r30 - a.r30 || a.dort_j - b.dort_j],
+  ['duo',   'Actifs + performants', (a,b) => duo(b) - duo(a)],
   ['perf',  'Performance', (a,b) => b.post - a.post],
   ['conf',  'Confiance',   (a,b) => b.conf - a.conf || b.qualite - a.qualite],
   ['pnl',   'PnL',         (a,b) => b.pnl - a.pnl],
   ['stab',  'Stabilité',   (a,b) => a.conc - b.conc || b.n - a.n],
   ['trades','Trades',      (a,b) => b.n - a.n]
 ];
-let tri = 'score', q = '';
-const F = { score:0, n:0, conf:0, dd:1e9, conc:1, obs:'all' };
+// Note d'activite et de performance combinees. Ce n'est PAS un nouveau score
+// scientifique : c'est un critere de TRI du produit, transparent et reversible.
+// Le percentile d'activite est borne a 60 trades sur 30 jours — au-dela, trader plus
+// n'est pas trader mieux.
+function duo(w){
+  const act = Math.min(1, (w.r30 || 0) / 60);
+  return w.score * 0.6 + act * 100 * 0.4;
+}
+let tri = 'duo', q = '';
+// L'activite est filtree PAR DEFAUT. Le score mesure une performance passee : sans
+// ce filtre, 9 des 20 premiers n'avaient fait aucun trade depuis 30 jours. Un wallet
+// dormant n'est pas ce qu'on cherche a suivre.
+const F = { score:0, n:0, conf:0, dd:1e9, conc:1, obs:'all', actif:30 };
 
 const FDEF = [
   ['score', 'Score minimum',        0, 100, 1, v => v],
@@ -350,6 +366,7 @@ function filtre(){
   let r = W.filter(w =>
     w.score >= F.score && w.n >= F.n && w.conf >= F.conf &&
     (w.conc == null || w.conc <= F.conc) &&
+    (F.actif === 0 || (w.dort_j != null && w.dort_j <= F.actif)) &&
     (F.obs === 'all' || (F.obs === 'obs' ? !!w.obs : !w.obs)));
   if (q){
     const s = q.toLowerCase().trim();
@@ -370,7 +387,9 @@ function carte(w){
         <div class="rank${w.rang <= 3 ? ' g' : ''}" aria-hidden="true">${w.rang}</div>
         <div class="cid">
           <div class="addr">${short(w.a)}</div>
-          <div class="meta">${w.n} trades · ${w.jours} j${dort ? ' · <span class="dort">inactif</span>' : ''}</div>
+          <div class="meta">${w.n} trades · ${w.jours} j</div>
+          <div class="meta act ${w.r30 >= 10 ? 'vif' : (w.dort_j > 90 ? 'mort' : 'lent')}"
+               style="margin-top:4px">${activite(w)}</div>
           <div class="meta" style="margin-top:5px"><span class="pill ${cls}" style="padding:2px 6px;font-size:9px">${lab}</span></div>
         </div>
         <div class="sbox">
@@ -399,6 +418,14 @@ function carte(w){
   </div>`;
 }
 
+function activite(w){
+  if (w.dort_j == null) return 'activité inconnue';
+  if (w.dort_j > 90) return `◍ dormant · ${w.dort_j.toFixed(0)} j sans trader`;
+  if (w.r30 === 0) return `◍ aucun trade sur 30 j · dernier il y a ${w.dort_j.toFixed(0)} j`;
+  const q = w.dort_j < 1 ? "aujourd'hui" : `il y a ${w.dort_j.toFixed(0)} j`;
+  return `◉ ${w.r30} trades / 30 j · dernier ${q}`;
+}
+
 /* ---------- sparkline : SVG, pas canvas — 60 cartes a l'ecran ---------- */
 function spark(w){
   if (!w.sp || w.sp.length < 3) return '<div style="height:30px"></div>';
@@ -416,7 +443,8 @@ let limite = PAGE;
 function rendu(reset){
   if (reset !== false) limite = PAGE;
   const r = filtre();
-  document.getElementById('count').textContent = r.length + ' / ' + W.length + ' wallets';
+  document.getElementById('count').textContent =
+    r.length + ' / ' + W.length + (F.actif ? ` actifs ≤ ${F.actif} j` : ' wallets');
   const vus = r.slice(0, limite), reste = r.length - vus.length;
   document.getElementById('list').innerHTML = r.length
     ? vus.map(carte).join('') + (reste > 0
@@ -560,6 +588,8 @@ function ouvre(a){
       <div><div class="k">Trades / jour</div><div class="v">${num(w.tpj)}</div></div>
       <div><div class="k">Durée médiane</div><div class="v">${w.duree_h == null ? NA : w.duree_h + ' h'}</div></div>
       <div><div class="k">Historique</div><div class="v">${w.jours} j</div></div>
+      <div><div class="k">Trades / 30 j</div><div class="v ${w.r30 >= 10 ? 'pos' : (w.r30 === 0 ? 'neg' : '')}">${w.r30 ?? NA}</div></div>
+      <div><div class="k">Dernier trade</div><div class="v ${w.dort_j > 90 ? 'neg' : ''}">${w.dort_j == null ? NA : (w.dort_j < 1 ? "aujourd'hui" : w.dort_j.toFixed(0) + ' j')}</div></div>
       <div><div class="k">Long / Short</div><div class="v">${NA}</div></div>
       <div><div class="k">Actifs</div><div class="v" style="font-size:12px">${w.coins.length ? w.coins.join(' · ') : NA}</div></div>
     </div>
@@ -758,7 +788,14 @@ document.querySelectorAll('#sorts .chip').forEach(c => c.onclick = () => {
   document.querySelectorAll('#sorts .chip').forEach(x => x.classList.remove('on'));
   c.classList.add('on'); rendu();
 });
-document.getElementById('fpanel').innerHTML = FDEF.map(([k, l, mn, mx, st]) =>
+document.getElementById('fpanel').innerHTML =
+  `<div class="frange"><label>Activité récente</label>
+   <div class="chips" style="margin:0">
+     ${[['7 derniers jours',7],['30 jours',30],['90 jours',90],['Tous, même dormants',0]]
+       .map(([l, j]) => `<button class="chip${j === 30 ? ' on' : ''}" data-act="${j}"
+         aria-label="Afficher les wallets actifs sur ${j || 'toute periode'}">${l}</button>`).join('')}
+   </div></div>` +
+  FDEF.map(([k, l, mn, mx, st]) =>
   `<div class="frange"><label for="f-${k}">${l} <b id="lb-${k}">${F[k]}</b></label>
    <input type="range" id="f-${k}" min="${mn}" max="${mx}" step="${st}" value="${F[k]}"
      data-f="${k}" aria-label="${l}"></div>`).join('') +
@@ -771,6 +808,11 @@ document.querySelectorAll('#fpanel input[type=range]').forEach(i => i.oninput = 
   const k = i.dataset.f, v = parseFloat(i.value); F[k] = v;
   document.getElementById('lb-' + k).textContent = FDEF.find(f => f[0] === k)[5](v);
   rendu();
+});
+document.querySelectorAll('#fpanel [data-act]').forEach(b => b.onclick = () => {
+  F.actif = parseInt(b.dataset.act, 10);
+  document.querySelectorAll('#fpanel [data-act]').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); rendu();
 });
 document.querySelectorAll('#fpanel [data-o]').forEach(b => b.onclick = () => {
   F.obs = b.dataset.o;
