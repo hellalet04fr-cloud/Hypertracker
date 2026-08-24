@@ -83,7 +83,23 @@ input[type=range]{width:100%;accent-color:var(--acc);height:26px}
 .card{width:100%;text-align:left;display:block;background:var(--surf);
   border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px;
   transition:.15s}
-.card:active{transform:scale(.985);background:var(--surf2)}
+.ctap{display:block;width:100%;text-align:left;cursor:pointer;border-radius:10px}
+.ctap:active{transform:scale(.99)}
+.ctap:focus-visible,.qa:focus-visible,.plus:focus-visible,nav button:focus-visible,
+.chip:focus-visible,.act:focus-visible,.back:focus-visible{
+  outline:2px solid var(--acc);outline-offset:2px}
+.cacts{display:flex;gap:6px;flex:0 0 auto}
+.qa{width:40px;height:40px;border-radius:9px;background:var(--surf2);
+  border:1px solid var(--line2);color:var(--soft);font-size:15px;line-height:1;
+  display:grid;place-items:center;transition:.15s}
+.qa.on{background:var(--acc-d);border-color:#2d5b8f;color:var(--acc)}
+.plus{width:100%;min-height:50px;margin:4px 0 8px;border-radius:12px;
+  background:var(--surf);border:1px solid var(--line2);color:var(--acc);
+  font:700 14px Manrope;display:flex;align-items:center;justify-content:center;gap:9px}
+.plus span{font:500 12px "IBM Plex Mono",monospace;color:var(--faint)}
+.plus:active{background:var(--surf2)}
+.fin{text-align:center;padding:18px;font:500 12px "IBM Plex Mono",monospace;color:var(--faint)}
+.dort{color:var(--warn)}
 .card.top{border-color:#2d5b8f}
 .chead{display:flex;align-items:flex-start;gap:11px;margin-bottom:12px}
 .rank{flex:0 0 auto;width:34px;height:34px;border-radius:9px;background:var(--surf3);
@@ -203,7 +219,7 @@ nav span{font:700 10px Manrope;letter-spacing:.01em}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
-<header>
+<header role="banner">
   <div class="hrow">
     <div>
       <div class="brand">Hyper<i>Tracker</i></div>
@@ -216,12 +232,13 @@ nav span{font:700 10px Manrope;letter-spacing:.01em}
   </div>
 </header>
 
-<main>
+<main id="principal">
   <!-- ============ CLASSEMENT ============ -->
-  <section class="view on" id="v-rank">
+  <section class="view on" id="v-rank" role="region" aria-label="Classement des wallets">
     <div class="search">
       <span style="color:var(--faint)">⌕</span>
-      <input id="q" placeholder="Rechercher une adresse ou un rang" autocomplete="off"
+      <input id="q" type="search" aria-label="Filtrer le classement par adresse ou par rang"
+             placeholder="Filtrer par adresse ou rang" autocomplete="off"
              autocapitalize="off" spellcheck="false">
     </div>
     <div class="chips" id="sorts"></div>
@@ -234,36 +251,40 @@ nav span{font:700 10px Manrope;letter-spacing:.01em}
   </section>
 
   <!-- ============ RECHERCHE ============ -->
-  <section class="view" id="v-search">
+  <section class="view" id="v-search" role="region" aria-label="Recherche de wallet">
     <div class="search">
       <span style="color:var(--faint)">⌕</span>
-      <input id="q2" placeholder="Coller une adresse 0x… ou un rang" autocomplete="off"
+      <input id="q2" type="search" aria-label="Rechercher un wallet par adresse ou par rang"
+             placeholder="Coller une adresse 0x… ou un rang" autocomplete="off"
              autocapitalize="off" spellcheck="false">
     </div>
     <div id="sres"></div>
   </section>
 
   <!-- ============ WATCHLIST ============ -->
-  <section class="view" id="v-watch"><div id="wlist"></div></section>
+  <section class="view" id="v-watch" role="region" aria-label="Watchlist"><div id="wlist"></div></section>
 
   <!-- ============ COMPARER ============ -->
-  <section class="view" id="v-cmp"><div id="cmp"></div></section>
+  <section class="view" id="v-cmp" role="region" aria-label="Comparaison de wallets"><div id="cmp"></div></section>
 </main>
 
-<div id="detail"></div>
+<div id="detail" role="dialog" aria-modal="true" aria-label="Fiche wallet"></div>
 
-<nav>
-  <button data-v="rank" class="on"><i>🏆</i><span>Classement</span></button>
-  <button data-v="search"><i>🔎</i><span>Recherche</span></button>
-  <button data-v="watch"><i>⭐</i><span>Watchlist</span></button>
-  <button data-v="cmp"><i>📊</i><span>Comparer</span></button>
+<nav role="navigation" aria-label="Navigation principale">
+  <button data-v="rank" class="on" aria-label="Classement" aria-current="page"><i aria-hidden="true">🏆</i><span>Classement</span></button>
+  <button data-v="search" aria-label="Recherche"><i aria-hidden="true">🔎</i><span>Recherche</span></button>
+  <button data-v="watch" aria-label="Watchlist"><i aria-hidden="true">⭐</i><span>Watchlist</span></button>
+  <button data-v="cmp" aria-label="Comparer"><i aria-hidden="true">📊</i><span>Comparer</span></button>
 </nav>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 const DB = %%DATA%%;
 const W = DB.wallets, META = DB.meta;
 const byA = Object.fromEntries(W.map(w => [w.a, w]));
+// reference de fraicheur : la derniere activite observee dans tout le jeu de donnees.
+// Un wallet sans trade depuis 90 jours est signale « inactif » — 32 % le sont.
+const DERNIER = Math.max(...W.map(w => w.t1 || 0));
 
 /* ---------- stockage local, toujours defensif ---------- */
 const S = {
@@ -340,32 +361,42 @@ function filtre(){
 /* ---------- carte ---------- */
 function carte(w){
   const [cls, lab] = statut(w);
-  return `<button class="card${w.rang <= 5 ? ' top' : ''}" onclick="ouvre('${w.a}')">
-    <div class="chead">
-      <div class="rank${w.rang <= 3 ? ' g' : ''}">${w.rang}</div>
-      <div class="cid">
-        <div class="addr">${short(w.a)}</div>
-        <div class="meta">${w.n} trades · ${w.jours} j</div>
-        <div class="meta" style="margin-top:5px"><span class="pill ${cls}" style="padding:2px 6px;font-size:9px">${lab}</span></div>
+  const inW = watch.includes(w.a), inS = sel.includes(w.a);
+  const dort = w.t1 && (DERNIER - w.t1) > 90*86400000;
+  return `<div class="card${w.rang <= 5 ? ' top' : ''}">
+    <div class="ctap" role="button" tabindex="0" data-a="${w.a}"
+         aria-label="Wallet rang ${w.rang}, score ${w.score.toFixed(1)} sur 100, confiance ${w.conf} pour cent. Ouvrir la fiche.">
+      <div class="chead">
+        <div class="rank${w.rang <= 3 ? ' g' : ''}" aria-hidden="true">${w.rang}</div>
+        <div class="cid">
+          <div class="addr">${short(w.a)}</div>
+          <div class="meta">${w.n} trades · ${w.jours} j${dort ? ' · <span class="dort">inactif</span>' : ''}</div>
+          <div class="meta" style="margin-top:5px"><span class="pill ${cls}" style="padding:2px 6px;font-size:9px">${lab}</span></div>
+        </div>
+        <div class="sbox">
+          <div class="sval" style="color:var(--acc)">${w.score.toFixed(1)}</div>
+          <div class="slab">SCORE</div>
+        </div>
       </div>
-      <div class="sbox">
-        <div class="sval" style="color:var(--acc)">${w.score.toFixed(1)}</div>
-        <div class="slab">SCORE</div>
+      ${spark(w)}
+      <div class="bar" role="img" aria-label="Score ${w.score.toFixed(0)} sur 100"><i style="width:${w.score}%"></i></div>
+      <div class="grid">
+        <div class="kv"><div class="k">PnL</div><div class="v ${sign(w.pnl)}">${money(w.pnl)}</div></div>
+        <div class="kv"><div class="k">Win rate</div><div class="v">${pct(w.win)}</div></div>
+        <div class="kv"><div class="k">Sharpe</div><div class="v">${num(w.sr)}</div></div>
+        <div class="kv"><div class="k">Confiance</div><div class="v">${w.conf} %</div></div>
       </div>
-    </div>
-    ${spark(w)}
-    <div class="bar"><i style="width:${w.score}%"></i></div>
-    <div class="grid">
-      <div class="kv"><div class="k">PnL</div><div class="v ${sign(w.pnl)}">${money(w.pnl)}</div></div>
-      <div class="kv"><div class="k">Win rate</div><div class="v">${pct(w.win)}</div></div>
-      <div class="kv"><div class="k">Sharpe</div><div class="v">${num(w.sr)}</div></div>
-      <div class="kv"><div class="k">Confiance</div><div class="v">${w.conf} %</div></div>
     </div>
     <div class="cfoot">
       <span class="meta">Conc. ${num(w.conc)} · DD ${money(-Math.abs(w.dd || 0))}</span>
-      <span class="go">Voir →</span>
+      <div class="cacts">
+        <button class="qa${inW ? ' on' : ''}" data-w="${w.a}"
+          aria-label="${inW ? 'Retirer de' : 'Ajouter a'} la watchlist" aria-pressed="${inW}">${inW ? '★' : '☆'}</button>
+        <button class="qa${inS ? ' on' : ''}" data-s="${w.a}"
+          aria-label="${inS ? 'Retirer de' : 'Ajouter a'} la comparaison" aria-pressed="${inS}">${inS ? '✓' : '＋'}</button>
+      </div>
     </div>
-  </button>`;
+  </div>`;
 }
 
 /* ---------- sparkline : SVG, pas canvas — 60 cartes a l'ecran ---------- */
@@ -380,13 +411,25 @@ function spark(w){
 }
 
 /* ---------- rendu classement ---------- */
-function rendu(){
+const PAGE = 40;
+let limite = PAGE;
+function rendu(reset){
+  if (reset !== false) limite = PAGE;
   const r = filtre();
   document.getElementById('count').textContent = r.length + ' / ' + W.length + ' wallets';
+  const vus = r.slice(0, limite), reste = r.length - vus.length;
   document.getElementById('list').innerHTML = r.length
-    ? r.slice(0, 60).map(carte).join('') +
-      (r.length > 60 ? `<div class="empty"><p>60 premiers affichés sur ${r.length}. Affinez les filtres ou la recherche.</p></div>` : '')
+    ? vus.map(carte).join('') + (reste > 0
+        ? `<button class="plus" onclick="plus()" aria-label="Afficher ${Math.min(PAGE, reste)} wallets supplementaires">
+             Voir ${Math.min(PAGE, reste)} de plus <span>${vus.length} / ${r.length}</span></button>`
+        : (r.length > PAGE ? `<div class="fin">Fin du classement · ${r.length} wallets</div>` : ''))
     : `<div class="empty"><div>⌕</div><p>Aucun wallet ne correspond à ces critères.</p></div>`;
+}
+function plus(){
+  limite += PAGE;
+  const y = window.scrollY;
+  rendu(false);
+  window.scrollTo(0, y);
 }
 
 /* ---------- graphiques ---------- */
@@ -486,7 +529,8 @@ function ouvre(a){
             >${l}${mort ? ' ·' : ''}</button>`;
         }).join('')}
       </div>
-      <canvas id="eqc" height="168"></canvas>
+      <canvas id="eqc" height="168" role="img"
+        aria-label="Courbe de PnL cumule sur ${w.jours} jours, resultat final ${money(w.pnl)}"></canvas>
       <div class="legend"><span>${dt(w.t0)}</span>
         <span class="${sign(w.pnl)}">${money(w.pnl)} cumulé</span>
         <span>${dt(w.t1)}</span></div>
@@ -494,7 +538,8 @@ function ouvre(a){
 
     <h3>Distribution des résultats</h3>
     <div class="sect">
-      <canvas id="hic" height="112"></canvas>
+      <canvas id="hic" height="112" role="img"
+        aria-label="Distribution des ${w.n} resultats de trade, du pire ${money(w.pire)} au meilleur ${money(w.best)}"></canvas>
       <div class="legend"><span class="neg">Pertes</span>
         <span>${w.n} trades</span><span class="pos">Gains</span></div>
     </div>
@@ -548,6 +593,9 @@ function ouvre(a){
   </div>`;
   const d = document.getElementById('detail'); d.classList.add('on'); d.scrollTop = 0;
   document.body.style.overflow = 'hidden';
+  const b = d.querySelector('.back'); if (b) b.focus({preventScroll: true});
+  // Echap ferme la fiche, comme n'importe quel dialogue
+  document.onkeydown = e => { if (e.key === 'Escape') ferme(); };
   requestAnimationFrame(() => {
     dessine(document.getElementById('eqc'), eq, w.pnl >= 0 ? '#2fe0a4' : '#ff5f6d');
     histo(document.getElementById('hic'), w.hist);
@@ -566,6 +614,10 @@ function ferme(){
   document.getElementById('detail').classList.remove('on');
   document.body.style.overflow = '';
   window.scrollTo(0, retour);
+  // le focus doit revenir sur la carte quittee, sinon le lecteur d'ecran
+  // repart du haut du document a chaque fermeture.
+  const c = courant && document.querySelector(`.ctap[data-a="${courant.a}"]`);
+  if (c) c.focus({preventScroll: true});
 }
 
 /* ---------- watchlist / selection ---------- */
@@ -576,7 +628,7 @@ function tw(a){
   const b = document.getElementById('bw');
   if (b){ const on = watch.includes(a); b.className = 'act' + (on ? ' w' : '');
     b.textContent = on ? '★ Dans la watchlist' : '☆ Watchlist'; }
-  rw();
+  majQA(a, 'w'); rw();
 }
 function ts(a){
   const i = sel.indexOf(a);
@@ -586,7 +638,17 @@ function ts(a){
   const b = document.getElementById('bs');
   if (b){ const on = sel.includes(a); b.className = 'act' + (on ? ' p' : '');
     b.textContent = on ? '✓ Sélectionné' : '＋ Comparer'; }
-  rc();
+  majQA(a, 's'); rc();
+}
+function majQA(a, quoi){
+  const on = quoi === 'w' ? watch.includes(a) : sel.includes(a);
+  document.querySelectorAll(`[data-${quoi}="${a}"]`).forEach(b => {
+    b.classList.toggle('on', on);
+    b.textContent = quoi === 'w' ? (on ? '★' : '☆') : (on ? '✓' : '＋');
+    b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', (on ? 'Retirer de' : 'Ajouter a') +
+      (quoi === 'w' ? ' la watchlist' : ' la comparaison'));
+  });
 }
 function rw(){
   document.getElementById('wlist').innerHTML = watch.length
@@ -659,11 +721,30 @@ function rs(){
        Ce wallet n'est pas dans les ${W.length} analysés.</p></div>`;
 }
 
+/* ---------- interactions de liste : delegation, une seule liaison ---------- */
+function surListe(e){
+  const qw = e.target.closest('[data-w]'), qs = e.target.closest('[data-s]');
+  if (qw){ e.stopPropagation(); tw(qw.dataset.w); return; }
+  if (qs){ e.stopPropagation(); ts(qs.dataset.s); return; }
+  const t = e.target.closest('.ctap');
+  if (t) ouvre(t.dataset.a);
+}
+document.addEventListener('click', surListe);
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const t = e.target.closest('.ctap');
+  if (t){ e.preventDefault(); ouvre(t.dataset.a); }
+});
+
 /* ---------- navigation ---------- */
 function vue(v){
   document.querySelectorAll('.view').forEach(x => x.classList.remove('on'));
   document.getElementById('v-' + v).classList.add('on');
-  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  document.querySelectorAll('nav button').forEach(b => {
+    const on = b.dataset.v === v;
+    b.classList.toggle('on', on);
+    on ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current');
+  });
   window.scrollTo(0, 0);
   if (v === 'watch') rw(); if (v === 'cmp') rc();
 }
@@ -678,8 +759,9 @@ document.querySelectorAll('#sorts .chip').forEach(c => c.onclick = () => {
   c.classList.add('on'); rendu();
 });
 document.getElementById('fpanel').innerHTML = FDEF.map(([k, l, mn, mx, st]) =>
-  `<div class="frange"><label>${l} <b id="lb-${k}">${F[k]}</b></label>
-   <input type="range" min="${mn}" max="${mx}" step="${st}" value="${F[k]}" data-f="${k}"></div>`).join('') +
+  `<div class="frange"><label for="f-${k}">${l} <b id="lb-${k}">${F[k]}</b></label>
+   <input type="range" id="f-${k}" min="${mn}" max="${mx}" step="${st}" value="${F[k]}"
+     data-f="${k}" aria-label="${l}"></div>`).join('') +
   `<div class="frange"><label>Provenance des données</label>
    <div class="chips" style="margin:0">
      <button class="chip on" data-o="all">Toutes</button>
