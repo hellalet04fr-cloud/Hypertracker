@@ -4,6 +4,8 @@ import json, os
 
 D = os.environ.get("HT_DATA_ROOT", r"C:\Users\maram\ht_data")
 DATA = json.load(open(os.path.join(D, "app_data.json")))
+_rep = os.path.join(D, "reputation_data.json")
+REP = json.load(open(_rep)) if os.path.exists(_rep) else {"meta": {}, "wallets": []}
 
 TPL = r"""<title>HyperTracker</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -182,20 +184,32 @@ th,td{padding:11px 10px;text-align:right;font:600 13px "IBM Plex Mono",monospace
 th:first-child,td:first-child{text-align:left;font-family:Manrope;font-size:12.5px;
   color:var(--faint);position:sticky;left:0;background:var(--surf)}
 thead th{font-size:11px;color:var(--acc);letter-spacing:.04em}
+.note-rep{background:var(--warn-d);border:1px solid #4a3a18;border-left-width:4px;
+  border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.note-rep b{display:block;color:var(--warn);font:600 11px/1 "IBM Plex Mono",monospace;
+  letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px}
+.note-rep p{margin:0;font-size:13.5px;line-height:1.55;color:var(--ink)}
+.rcard{background:var(--surf);border:1px solid var(--line);border-radius:14px;
+  padding:14px;margin-bottom:10px}
+.rtop{display:flex;align-items:center;gap:11px;margin-bottom:12px}
+.rbadge{flex:0 0 auto;min-width:46px;height:34px;padding:0 8px;border-radius:9px;
+  background:var(--warn-d);border:1px solid #4a3a18;color:var(--warn);
+  display:grid;place-items:center;font:700 12px "IBM Plex Mono",monospace}
 .empty{text-align:center;padding:52px 20px;color:var(--faint)}
 .empty div:first-child{font-size:38px;margin-bottom:14px;opacity:.5}
 .empty p{font:500 14px/1.6 Manrope;max-width:30ch;margin:9px auto 0}
 
 /* ---------- nav ---------- */
 nav{position:fixed;left:0;right:0;bottom:0;z-index:50;display:grid;
-  grid-template-columns:repeat(4,1fr);background:rgba(8,11,16,.96);
+  grid-template-columns:repeat(5,1fr);background:rgba(8,11,16,.96);
   backdrop-filter:blur(18px);border-top:1px solid var(--line);
   padding-bottom:env(safe-area-inset-bottom)}
 nav button{display:flex;flex-direction:column;align-items:center;gap:4px;
   padding:9px 4px;color:var(--faint);min-height:56px;justify-content:center}
 nav button.on{color:var(--acc)}
 nav i{font-style:normal;font-size:19px;line-height:1}
-nav span{font:700 10px Manrope;letter-spacing:.01em}
+nav span{font:700 9.5px Manrope;letter-spacing:-.01em;text-align:center}
+@media (max-width:380px){nav span{font-size:8.5px}nav i{font-size:17px}}
 .toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + 16px);transform:translateX(-50%) translateY(14px);
   background:var(--surf3);border:1px solid var(--line2);color:var(--ink);
   padding:11px 17px;border-radius:11px;font:600 13px Manrope;z-index:90;
@@ -269,6 +283,23 @@ nav span{font:700 10px Manrope;letter-spacing:.01em}
 
   <!-- ============ COMPARER ============ -->
   <section class="view" id="v-cmp" role="region" aria-label="Comparaison de wallets"><div id="cmp"></div></section>
+
+  <!-- ============ REPUTATION ============ -->
+  <section class="view" id="v-rep" role="region" aria-label="Reputation HyperTracker">
+    <div class="note-rep">
+      <b>Chiffres HyperTracker, pas les nôtres</b>
+      <p>Ces wallets viennent des <strong>leaderboards perpétuels HyperTracker</strong>.
+      Les montants affichés sont <strong>ceux de HyperTracker</strong> — nous ne leur
+      attribuons aucun score.<br><br>
+      Raison mesurée : sur 315 wallets, <strong>256 n'ont aucun trade clos</strong>
+      exploitable. Ce sont des positions tenues longtemps, jamais ramenées à plat. Notre
+      modèle compte des allers-retours clos ; il ne peut pas les mesurer. Les deux
+      grandeurs ne sont pas comparables : PnL de compte d'un côté, performance par
+      trade clos de l'autre.</p>
+    </div>
+    <div class="chips" id="rsorts"></div>
+    <div id="rlist"></div>
+  </section>
 </main>
 
 <div id="detail" role="dialog" aria-modal="true" aria-label="Fiche wallet"></div>
@@ -278,11 +309,13 @@ nav span{font:700 10px Manrope;letter-spacing:.01em}
   <button data-v="search" aria-label="Recherche"><i aria-hidden="true">🔎</i><span>Recherche</span></button>
   <button data-v="watch" aria-label="Watchlist"><i aria-hidden="true">⭐</i><span>Watchlist</span></button>
   <button data-v="cmp" aria-label="Comparer"><i aria-hidden="true">📊</i><span>Comparer</span></button>
+  <button data-v="rep" aria-label="Reputation HyperTracker"><i aria-hidden="true">🏅</i><span>Réputation</span></button>
 </nav>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 const DB = %%DATA%%;
+const RP = %%REP%%;
 const W = DB.wallets, META = DB.meta;
 const byA = Object.fromEntries(W.map(w => [w.a, w]));
 // reference de fraicheur : la derniere activite observee dans tout le jeu de donnees.
@@ -735,6 +768,62 @@ function rc(){
       `<button class="chip on" style="margin-right:7px" onclick="ts('${w.a}')">#${w.rang} ✕</button>`).join('')}</div>`;
 }
 
+/* ---------- reputation : chiffres HyperTracker, attribues a HyperTracker ---------- */
+const RSORTS = [
+  ['rang',  'Rang HyperTracker', (a,b) => (a.rang_alltime||9e9) - (b.rang_alltime||9e9)],
+  ['m30',   'PnL 30 jours',      (a,b) => (b.pnlMonth||0) - (a.pnlMonth||0)],
+  ['all',   'PnL total',         (a,b) => (b.pnlAllTime||0) - (a.pnlAllTime||0)],
+  ['pct',   'PnL %',             (a,b) => (b.pnlPercentAllTime||0) - (a.pnlPercentAllTime||0)],
+  ['vol',   'Volume',            (a,b) => (b.volumeAllTime||0) - (a.volumeAllTime||0)]
+];
+let rtri = 'rang';
+function gros(v){
+  if (v == null) return NA;
+  const a = Math.abs(v), s = v < 0 ? '−' : '+';
+  if (a >= 1e9) return s + '$' + (a/1e9).toFixed(1) + 'Md';
+  if (a >= 1e6) return s + '$' + (a/1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return s + '$' + (a/1e3).toFixed(0) + 'K';
+  return s + '$' + a.toFixed(0);
+}
+function brut(v){ return v == null ? NA : gros(v).slice(1); }
+
+function rcarte(w){
+  const vide = !w.perpEquity, mesure = w.notre_score != null;
+  const pc = w.pnlPercentAllTime;
+  return `<div class="rcard">
+    <div class="rtop">
+      <div class="rbadge">#${w.rang_alltime ?? w.meilleur_rang}</div>
+      <div class="cid">
+        <div class="addr">${short(w.a)}</div>
+        <div class="meta">${w.n_boards} classement${w.n_boards>1?'s':''} HyperTracker${w.age ? ' · depuis ' + w.age : ''}</div>
+      </div>
+      <div class="sbox">
+        <div class="sval ${sign(w.pnlAllTime)}" style="font-size:17px">${gros(w.pnlAllTime)}</div>
+        <div class="slab">PNL TOTAL</div>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="kv"><div class="k">PnL 30 j</div><div class="v ${sign(w.pnlMonth)}">${gros(w.pnlMonth)}</div></div>
+      <div class="kv"><div class="k">PnL %</div><div class="v ${sign(pc)}">${pc == null ? NA : (pc>=0?'+':'−') + Math.abs(pc).toFixed(0) + '%'}</div></div>
+      <div class="kv"><div class="k">Volume</div><div class="v">${brut(w.volumeAllTime)}</div></div>
+      <div class="kv"><div class="k">Équité</div><div class="v ${vide?'neg':''}">${vide ? 'vidée' : brut(w.perpEquity)}</div></div>
+    </div>
+    <div class="cfoot">
+      <span class="meta">${mesure
+        ? `Notre modèle : score ${w.notre_score} sur ${w.notre_n} trades clos`
+        : (w.notre_n ? `Seulement ${w.notre_n} trades clos — trop peu pour un score`
+                     : 'Aucun trade clos : non mesurable par notre modèle')}</span>
+      <button class="qa" onclick="window.open('https://app.hyperliquid.xyz/explorer/address/${w.a}','_blank')"
+        aria-label="Ouvrir sur Hyperliquid">↗</button>
+    </div>
+  </div>`;
+}
+function rr(){
+  const r = [...RP.wallets].sort(RSORTS.find(x => x[0] === rtri)[2]).slice(0, 60);
+  document.getElementById('rlist').innerHTML = r.map(rcarte).join('') +
+    `<div class="fin">${RP.wallets.length} wallets de leaderboard · source HyperTracker</div>`;
+}
+
 /* ---------- recherche ---------- */
 function rs(){
   const s = document.getElementById('q2').value.toLowerCase().trim();
@@ -776,7 +865,7 @@ function vue(v){
     on ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current');
   });
   window.scrollTo(0, 0);
-  if (v === 'watch') rw(); if (v === 'cmp') rc();
+  if (v === 'watch') rw(); if (v === 'cmp') rc(); if (v === 'rep') rr();
 }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => vue(b.dataset.v));
 
@@ -831,7 +920,14 @@ pv.textContent = META.verdict === 'VALIDE' ? '🟢 VALIDÉ'
   : META.verdict === 'INCONCLUSIF' ? '⚠️ INCONCLUSIF' : '🔴 ' + META.verdict;
 pv.className = 'pill ' + (META.verdict === 'VALIDE' ? 'o' : 'i');
 document.getElementById('pmaj').textContent = META.maj;
-rendu(); rs(); rw(); rc();
+document.getElementById('rsorts').innerHTML = RSORTS.map(([k, l], i) =>
+  `<button class="chip${i === 0 ? ' on' : ''}" data-r="${k}">${l}</button>`).join('');
+document.querySelectorAll('#rsorts .chip').forEach(c => c.onclick = () => {
+  rtri = c.dataset.r;
+  document.querySelectorAll('#rsorts .chip').forEach(x => x.classList.remove('on'));
+  c.classList.add('on'); rr();
+});
+rendu(); rs(); rw(); rc(); rr();
 let rz;
 addEventListener('resize', () => {
   clearTimeout(rz);
@@ -844,7 +940,8 @@ addEventListener('resize', () => {
 });
 </script>"""
 
-html = TPL.replace("%%DATA%%", json.dumps(DATA, separators=(",", ":")))
+html = (TPL.replace("%%DATA%%", json.dumps(DATA, separators=(",", ":")))
+           .replace("%%REP%%", json.dumps(REP, separators=(",", ":"))))
 out = os.environ.get("HT_APP_OUT", os.path.join(D, "app.html"))
 open(out, "w", encoding="utf8").write(html)
 print(f"ecrit : {out}  ({len(html)/1024:.0f} Ko)")

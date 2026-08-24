@@ -43,10 +43,16 @@ def main() -> int:
           json.load(open(os.path.join(D, "classement_wallets.json")))["classement"]}
     SER = json.load(open(os.path.join(D, "series_wallets.json")))
 
-    # on isole le GABARIT du bloc de donnees : chercher un nombre dans les donnees
-    # n'a aucun sens, il s'y trouve forcement.
-    i = html.index("const DB = ")
-    gabarit = html[:i] + html[html.index("};", i) + 2:]
+    # On isole le GABARIT de TOUS les blocs de donnees : chercher un nombre dans les
+    # donnees n'a aucun sens, il s'y trouve forcement. Cette fonction avait un angle
+    # mort — elle ne retirait que `const DB`, si bien que l'ajout d'un second bloc
+    # `const RP` a fait remonter trois faux positifs. L'audit a signale sa propre
+    # hypothese devenue fausse, ce qui est exactement son role.
+    gabarit = html
+    for nom in ("const DB = ", "const RP = "):
+        i = gabarit.find(nom)
+        if i >= 0:
+            gabarit = gabarit[:i] + gabarit[gabarit.index("};", i) + 2:]
 
     r: dict[str, int] = {}
     r["exemples du brief en dur"] = sum(1 for x in EXEMPLES if x in gabarit)
