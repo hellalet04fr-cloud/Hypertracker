@@ -33,7 +33,9 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 header{position:sticky;top:0;z-index:40;background:rgba(8,11,16,.92);
   backdrop-filter:blur(14px);border-bottom:1px solid var(--line);
   padding:calc(env(safe-area-inset-top) + 12px) 16px 12px}
-.hrow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.hrow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.hrow>div{min-width:0}
+.hrow>div:last-child{flex:0 0 auto}
 .brand{font:800 20px/1 Manrope,sans-serif;letter-spacing:-.02em}
 .brand i{font-style:normal;color:var(--acc)}
 .hsub{font:500 11px/1 "IBM Plex Mono",monospace;color:var(--faint);
@@ -90,7 +92,8 @@ input[type=range]{width:100%;accent-color:var(--acc);height:26px}
 .cid{flex:1;min-width:0}
 .addr{font:600 13.5px "IBM Plex Mono",monospace;color:var(--ink);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.meta{font:500 11.5px Manrope;color:var(--faint);margin-top:3px}
+.meta{font:500 11.5px/1.4 Manrope;color:var(--faint);margin-top:3px;
+  min-width:0;overflow-wrap:anywhere}
 .sbox{flex:0 0 auto;text-align:right}
 .sval{font:700 21px/1 "IBM Plex Mono",monospace}
 .slab{font:600 9.5px/1 "IBM Plex Mono",monospace;color:var(--faint);
@@ -103,11 +106,12 @@ input[type=range]{width:100%;accent-color:var(--acc);height:26px}
 .kv .k{font:600 9.5px/1 "IBM Plex Mono",monospace;color:var(--faint);
   letter-spacing:.06em;text-transform:uppercase}
 .kv .v{font:600 14px/1.2 "IBM Plex Mono",monospace;margin-top:5px;
-  overflow:hidden;text-overflow:ellipsis}
+  white-space:nowrap;overflow:visible}
 .pos{color:var(--pos)}.neg{color:var(--neg)}.na{color:var(--faint);font-weight:500}
-.cfoot{display:flex;align-items:center;justify-content:space-between;
-  margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
-.go{font:700 12.5px Manrope;color:var(--acc)}
+.cfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  flex-wrap:wrap;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
+.cfoot .meta{min-width:0;flex:1 1 auto;margin-top:0}
+.go{flex:0 0 auto;font:700 12.5px Manrope;color:var(--acc)}
 
 /* ---------- detail ---------- */
 #detail{position:fixed;inset:0;z-index:60;background:var(--bg);overflow-y:auto;
@@ -123,7 +127,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:26px}
 .daddr{font:500 12.5px "IBM Plex Mono",monospace;color:var(--soft);
   margin-top:7px;word-break:break-all;line-height:1.5}
 .acts{display:flex;gap:8px;margin:13px 0 18px;flex-wrap:wrap}
-.act{flex:1;min-width:140px;min-height:44px;display:inline-flex;align-items:center;
+.act{flex:1 1 calc(50% - 4px);min-width:0;min-height:44px;display:inline-flex;align-items:center;
   justify-content:center;gap:7px;padding:11px;border-radius:10px;
   background:var(--surf2);border:1px solid var(--line2);font:700 13px Manrope}
 .act.p{background:var(--acc-d);border-color:#2d5b8f;color:var(--acc)}
@@ -178,6 +182,24 @@ nav span{font:700 10px Manrope;letter-spacing:.01em}
   padding:11px 17px;border-radius:11px;font:600 13px Manrope;z-index:90;
   opacity:0;pointer-events:none;transition:.22s}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+/* Sous 392px — iPhone SE, mini, 12/13 mini — quatre colonnes deviennent trop
+   etroites pour les valeurs les plus longues (+$13.9K). On passe a deux lignes
+   plutot que de rogner un chiffre : un montant tronque est pire qu'un montant
+   qui prend deux lignes. */
+@media (max-width:392px){
+  main{padding:12px 10px 18px}
+  .card{padding:12px}
+  .grid{grid-template-columns:repeat(2,1fr);gap:11px 9px}
+  .sval{font-size:19px}
+  .hcard .v{font-size:26px}
+  .dtitle{font-size:21px}
+  .g2{gap:11px}
+  nav span{font-size:9.5px}
+}
+@media (max-width:340px){
+  .hero,.g2{grid-template-columns:1fr}
+  .brand{font-size:18px}
+}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
@@ -323,7 +345,8 @@ function carte(w){
       <div class="rank${w.rang <= 3 ? ' g' : ''}">${w.rang}</div>
       <div class="cid">
         <div class="addr">${short(w.a)}</div>
-        <div class="meta">${w.n} trades · ${w.jours} j · <span class="pill ${cls}" style="padding:2px 5px;font-size:9px">${lab}</span></div>
+        <div class="meta">${w.n} trades · ${w.jours} j</div>
+        <div class="meta" style="margin-top:5px"><span class="pill ${cls}" style="padding:2px 6px;font-size:9px">${lab}</span></div>
       </div>
       <div class="sbox">
         <div class="sval" style="color:var(--acc)">${w.score.toFixed(1)}</div>
@@ -339,7 +362,7 @@ function carte(w){
       <div class="kv"><div class="k">Confiance</div><div class="v">${w.conf} %</div></div>
     </div>
     <div class="cfoot">
-      <span class="meta">Concentration ${num(w.conc)} · Drawdown ${money(-Math.abs(w.dd || 0))}</span>
+      <span class="meta">Conc. ${num(w.conc)} · DD ${money(-Math.abs(w.dd || 0))}</span>
       <span class="go">Voir →</span>
     </div>
   </button>`;
