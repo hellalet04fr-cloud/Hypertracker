@@ -244,7 +244,11 @@ def etape_top5(budget: int) -> int:
             break
         n_vus = 0
 
-        if etat["large_marche"] is not False:
+        # FENETRE LARGE REFUSEE, mesure du 2026-08-24 : 7 reponses HTTP 400 pour
+        # 400 jours demandes, et toutes les fenetres retenues font 30 jours. Le
+        # plafond est reel. On ne retente plus : c'etait 5 requetes perdues par
+        # passage sur la ressource la plus rare du projet.
+        if False:
             tr, arret = _demander(a, maintenant - timedelta(days=400), maintenant, 500)
             if arret:
                 return etat["obtenus"]

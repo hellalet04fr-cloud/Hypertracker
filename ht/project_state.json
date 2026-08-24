@@ -1,5 +1,5 @@
 {
- "maj": "2026-08-23",
+ "maj": "2026-08-24",
  "projet": "HyperTracker",
  "mode": "recherche / paper uniquement",
  "progression_pct": 75,
@@ -11,14 +11,6 @@
  },
  "verrous": [
   {
-   "id": "CONFIRMATION_OBSERVED_TOP5",
-   "statut": "OUVERT, bloque par le quota",
-   "bloque": "certification du classement",
-   "mesure": "0/5 wallets du top-5 disposent de closed-trades natifs",
-   "cause_racine": "quota HyperTracker refuse (429) dans la fenetre courante ; reset mesure a 03:00 UTC",
-   "action_prete": "etape_top5 collecte en 5 requetes (fenetre large + limit=500), puis verdict_observed applique le protocole scelle"
-  },
-  {
    "id": "GRANULARITE_PROBABILITE",
    "statut": "OUVERT, contourne a l'affichage",
    "bloque": "rien de critique",
@@ -28,6 +20,14 @@
    "id": "CRASH_BEHAVIOR_DUCKDB",
    "statut": "OUVERT, hors chemin produit",
    "mesure": "acces violation natif dans ht/behavior.py:566 (quantile_cont DuckDB) ; fait echouer tests/test_elite.py"
+  },
+  {
+   "id": "ECHANTILLON_NATIF_INSUFFISANT",
+   "statut": "OUVERT, limite par la source",
+   "bloque": "certification du classement",
+   "mesure": "trades natifs perp du top-5 : 30, 7, 8, 4, 0. Le protocole en exige 30 par wallet ; 4 sur 5 sont sous le seuil.",
+   "cause_racine": "HyperTracker n'indexe qu'une fraction de l'activite de ces wallets : 0.02 trade/jour natif contre 0.15 en reconstruit sur le wallet 2. Approfondir les fenetres ne comble pas un ecart d'un facteur 7.",
+   "fait_encourageant": "sur le seul wallet a echantillon valide (n=30), l'ecart DERIVED/OBSERVED vaut 0.013, et la correlation de rang sur les 4 comparables vaut 1.0."
   }
  ],
  "experiences_validees": [
@@ -141,7 +141,7 @@
   "selectivite_12_variantes": "a5e831c553eb7190f6a7f6a77ea6840c6d8a0821342ed6ebfa10c18e44282dc2",
   "horizon_6_variantes": "ee2234f5e8daf3a8405528646d09be4224c2005b9428a4c40bb0771a18d8bb63"
  },
- "prochaine_action": "au reset 03:00 UTC : python -m ht.orchestrateur --boucle. Le verrou CONFIRMATION_OBSERVED_TOP5 devient executable, la collecte part, le verdict scelle suit, l'etat change et rompt la stagnation de lui-meme.",
+ "prochaine_action": "le verdict scelle est rendu : INCONCLUSIF. La partie scientifique est terminee en l'etat. Toute suite exige soit un tier HyperTracker superieur, soit une decision de l'utilisateur sur le seuil d'echantillon \u2014 que je ne modifierai pas.",
  "interdits": [
   "abaisser un seuil du FINAL_GATE",
   "ajouter une variante apres observation",
@@ -168,7 +168,16 @@
    "seuil": 0.1
   },
   "dashboard": "https://claude.ai/code/artifact/ce715332-04f6-4fa0-a780-27291fa0d639",
-  "statut": "DERIVED valide hors echantillon, confirmation OBSERVED EN ATTENTE"
+  "statut": "DERIVED valide hors echantillon \u2014 confirmation OBSERVED INCONCLUSIVE faute d'echantillon natif suffisant",
+  "verdict_observed": {
+   "verdict": "INCONCLUSIF",
+   "motif": "4 wallets sur 5 sous 30 trades natifs",
+   "positifs": 3,
+   "apparies": 4,
+   "insuffisants": 4,
+   "correlation_rang": 1.0,
+   "sha256_protocole": "f1273104dc5fc17acd74c5debd6f1af507aa68eaaecf18992cc12f02082d2910"
+  }
  },
  "branches_abandonnees": [
   "liquidity sweep",
