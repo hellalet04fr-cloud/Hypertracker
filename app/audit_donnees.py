@@ -95,10 +95,30 @@ def main() -> int:
     r["sparklines hors bornes"] = sum(
         1 for w in A["wallets"] for x in (w.get("sp") or []) if x < 0 or x > 1)
 
-    # --- les champs indisponibles doivent rester N/A, jamais combles
-    for lab, marq in (("ROI force a N/A", '<div class="k">ROI</div><div class="v">${NA}'),
-                      ("Long/Short force a N/A", '<div class="k">Long / Short</div><div class="v">${NA}')):
+    # --- les champs indisponibles doivent rester N/D, jamais combles
+    # Le capital engage et le sens des positions n'existent pas dans la source : ces
+    # deux cellules DOIVENT rester non renseignees. Les marqueurs suivent le balisage
+    # de l'interface — quand elle change, ils changent, mais ce qu'ils verifient ne
+    # change pas : aucune valeur ne doit avoir ete inventee pour combler ces trous.
+    for lab, marq in (("ROI force a N/D", "cellule('ROI', NA)"),
+                      ("Long/Short force a N/D", "cellule('Long / Short', NA)")):
         r[lab.lower()] = 0 if marq in html else 1
+
+    # --- la courbe de drawdown doit culminer exactement sur le champ `dd` affiche
+    r["courbes de drawdown en ecart"] = sum(
+        1 for w in A["wallets"] if w.get("ddc")
+        and abs(max(p[1] for p in w["ddc"]) - w["dd"]) > 0.02)
+
+    # --- eq et ddc partagent le meme echantillonnage : desalignees, elles
+    # raconteraient deux histoires temporelles differentes du meme wallet
+    r["courbes desynchronisees"] = sum(
+        1 for w in A["wallets"] if w.get("ddc")
+        and [p[0] for p in w["ddc"]] != [p[0] for p in w["eq"]])
+
+    # --- une regularite mensuelle non calculable reste None, jamais 0
+    r["regularite fabriquee"] = sum(
+        1 for w in A["wallets"]
+        if w.get("stab") is not None and len(w.get("mois") or []) < 3)
 
     print("AUDIT D'AUTHENTICITE — chaque compteur doit valoir ZERO")
     print("=" * 56)

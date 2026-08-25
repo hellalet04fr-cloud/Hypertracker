@@ -1,6 +1,6 @@
 """Prepare les donnees de l'application. Precalcule tout : aucun calcul au rendu.
 Ne touche a aucun score, seuil ni protocole — il ne fait que deriver de l'affichable."""
-import json, os, math, statistics as st
+import json, os, math, time, statistics as st
 
 D = os.environ.get("HT_DATA_ROOT", r"C:\Users\maram\ht_data")
 CL = json.load(open(os.path.join(D, "classement_wallets.json")))
@@ -23,22 +23,38 @@ N_EQ = 240
 N_SPARK = 18       # micro-courbe des cartes de classement
 N_HIST = 13        # tranches de l'histogramme
 
+# Reprise a l'identique de ht.ranking.MIN_PERIODS_FOR_PERSISTENCE. En dessous de ce
+# nombre de mois distincts, la regularite mensuelle n'est pas calculable : elle reste
+# None et s'affiche N/D, jamais 0 ni une valeur substituee.
+MIN_MOIS_REGULARITE = 3
+
+
+def indices(taille, n, obligatoires=()):
+    """
+    Indices d'un sous-echantillonnage regulier, en CONSERVANT TOUJOURS le dernier
+    point ainsi que les indices explicitement exiges.
+
+    Sans la garantie sur le dernier point, les indices 0, pas, 2*pas... s'arretent
+    avant la fin et la courbe ne se termine pas sur le PnL reel du wallet. Mesure :
+    39 wallets sur 231 affichaient une courbe finissant ailleurs que sur leur total,
+    pendant que la legende, elle, donnait le bon chiffre.
+
+    `obligatoires` sert le meme principe pour les extremums : un point de creux
+    maximal supprime par l'echantillonnage donne une courbe de drawdown dont le
+    minimum contredit le champ `dd` affiche a cote. Mesure avant correction : jusqu'a
+    19.57 USD d'ecart. Un point remarquable ne se sous-echantillonne pas.
+    """
+    if taille <= n:
+        return list(range(taille))
+    pas = (taille - 1) / (n - 1)
+    idx = {min(taille - 1, round(i * pas)) for i in range(n)}
+    idx |= {i for i in obligatoires if 0 <= i < taille}
+    return sorted(idx)
+
 
 def echant(v, n):
-    """
-    Sous-echantillonne en CONSERVANT TOUJOURS le dernier point.
-
-    Sans cette garantie, les indices 0, pas, 2*pas... s'arretent avant la fin et la
-    courbe ne se termine pas sur le PnL reel du wallet. Mesure : 39 wallets sur 231
-    affichaient une courbe finissant ailleurs que sur leur total, pendant que la
-    legende, elle, donnait le bon chiffre. Deux affichages contradictoires pour la
-    meme grandeur.
-    """
-    if len(v) <= n:
-        return v
-    pas = (len(v) - 1) / (n - 1)
-    idx = sorted({min(len(v) - 1, round(i * pas)) for i in range(n)})
-    return [v[i] for i in idx]
+    """Sous-echantillonnage regulier simple, dernier point toujours conserve."""
+    return [v[i] for i in indices(len(v), n)]
 
 
 def prepare(a, w):
@@ -57,7 +73,8 @@ def prepare(a, w):
     if not r:
         out.update({"win": None, "pf": None, "best": None, "pire": None,
                     "duree_h": None, "tpj": None, "vol": None, "eq": [], "hist": [],
-                    "coins": [], "t0": None, "t1": None})
+                    "coins": [], "t0": None, "t1": None, "ddc": [], "frais": None,
+                    "stab": None, "pire_serie": None, "mois": []})
         return out
 
     gains = [x for x in r if x > 0]
@@ -81,12 +98,55 @@ def prepare(a, w):
     out["r7"] = sum(1 for t in tr if t["close"] >= REF - 7 * 86400000)
     out["dort_j"] = round((REF - tr[-1]["close"]) / 86400000, 1)
 
-    # courbe d'equity : PnL cumule, sous-echantillonnee
-    c, eq = 0.0, []
+    out["frais"] = round(sum(t["fee"] for t in tr), 2)
+
+    # courbe d'equity ET courbe de drawdown, construites dans la MEME boucle sur la
+    # serie complete, puis sous-echantillonnees a la meme longueur : echant() etant
+    # deterministe pour une longueur donnee, les deux courbes retiennent exactement
+    # les memes indices et restent alignees dans le temps.
+    #
+    # Le sommet demarre a 0.0, pas au premier point. C'est la convention du moteur
+    # (ht/ranking.py, « drawdown sur la courbe de PnL net cumule ») : un repli sous le
+    # point de depart compte comme drawdown. Verifie sur les 231 wallets — en partant
+    # du premier point au lieu de 0, 57 wallets donnaient une courbe dont le maximum
+    # contredisait le champ `dd` affiche juste a cote, jusqu'a 5 499 USD d'ecart. Avec
+    # cette convention, l'ecart maximal tombe a 0.005 (arrondi seul).
+    c, sommet, eq, ddc = 0.0, 0.0, [], []
     for t, x in zip(tr, r):
         c += x
+        sommet = max(sommet, c)
         eq.append([t["close"], round(c, 2)])
-    out["eq"] = echant(eq, N_EQ)
+        ddc.append([t["close"], round(sommet - c, 2)])
+    # Les deux courbes partagent le MEME jeu d'indices : elles restent alignees dans
+    # le temps, et le point de creux maximal — celui qui porte la valeur `dd` affichee
+    # — survit a l'echantillonnage au lieu d'etre elimine.
+    creux = max(range(len(ddc)), key=lambda i: ddc[i][1])
+    idx = indices(len(eq), N_EQ, obligatoires=(creux,))
+    out["eq"] = [eq[i] for i in idx]
+    out["ddc"] = [ddc[i] for i in idx]
+
+    # REGULARITE MENSUELLE. Le moteur calcule deja cette grandeur en interne
+    # (ht/ranking.py, « persistance : mois gagnants »), mais ne la publie pas dans le
+    # classement. On reprend sa definition a l'identique — agregation du PnL net par
+    # (annee, mois), un mois compte comme gagnant si son PnL net est > 0 — ainsi que sa
+    # garde : en dessous de MIN_PERIODS_FOR_PERSISTENCE = 3 mois distincts, la grandeur
+    # n'est pas calculable et reste None, donc affichee N/D. Aucune valeur substituee.
+    par_mois = {}
+    for t, x in zip(tr, r):
+        d = time.gmtime(t["close"] / 1000)
+        par_mois[(d.tm_year, d.tm_mon)] = par_mois.get((d.tm_year, d.tm_mon), 0.0) + x
+    mois = sorted(par_mois)
+    if len(mois) >= MIN_MOIS_REGULARITE:
+        out["stab"] = round(sum(1 for m in mois if par_mois[m] > 0) / len(mois) * 100, 1)
+        serie = pire = 0
+        for m in mois:
+            serie = serie + 1 if par_mois[m] <= 0 else 0
+            pire = max(pire, serie)
+        out["pire_serie"] = pire
+    else:
+        out["stab"] = None
+        out["pire_serie"] = None
+    out["mois"] = [[f"{y:04d}-{m:02d}", round(par_mois[(y, m)], 2)] for y, m in mois]
     # sparkline : forme normalisee 0-1, pour scanner la trajectoire sans ouvrir la fiche
     sp = echant([y for _, y in eq], N_SPARK)
     lo, hi = min(sp), max(sp)
@@ -109,10 +169,16 @@ def prepare(a, w):
         cnt[t["coin"]] = cnt.get(t["coin"], 0) + 1
     out["coins"] = [k for k, _ in sorted(cnt.items(), key=lambda kv: -kv[1])[:4]]
 
+    # Confrontation DERIVED / OBSERVED, telle qu'elle sort du protocole scelle. On
+    # recopie ses champs sans en deriver de nouveaux : la comparaison appartient au
+    # protocole, l'interface ne fait que la montrer. Presente sur 5 wallets sur 231.
     o = OBS.get(a.lower())
     if o:
         out["obs"] = {"n": o["n_observed"], "sr": o["sharpe_observed"],
-                      "suffisant": o["suffisant"], "ecart": o.get("ecart_absolu")}
+                      "sr_der": o.get("sharpe_derived"),
+                      "suffisant": o["suffisant"], "ecart": o.get("ecart_absolu"),
+                      "ecart_rel": o.get("ecart_relatif"),
+                      "signe": o.get("changement_de_signe")}
     return out
 
 
@@ -137,6 +203,11 @@ def analyser(w):
                        f"({w['sr']:.2f} → {w['post']:.2f})")
     if w["pnl"] is not None and w["dd"] and w["pnl"] > 0 and w["dd"] > abs(w["pnl"]):
         risques.append(f"Drawdown ({w['dd']:.0f}) supérieur au PnL total ({w['pnl']:.0f})")
+    if w.get("stab") is not None:
+        if w["stab"] >= 70: forts.append(f"Régularité mensuelle — {w['stab']:.0f} % de mois gagnants")
+        elif w["stab"] < 40: faibles.append(f"Résultats irréguliers — {w['stab']:.0f} % de mois gagnants")
+        if w.get("pire_serie", 0) >= 4:
+            risques.append(f"{w['pire_serie']} mois perdants consécutifs dans l'historique")
     if w.get("r30", 0) >= 20: forts.append(f"Tres actif — {w['r30']} trades sur 30 jours")
     elif w.get("r30", 0) >= 5: forts.append(f"Actif — {w['r30']} trades sur 30 jours")
     if w.get("dort_j") is not None:
@@ -172,6 +243,15 @@ meta = {
     "tau": round(CL["tau"], 4), "m": round(CL["m"], 4),
     "verdict": VER["verdict"], "verdict_motif": VER["motif"],
     "top5": [x["adresse"] for x in VER["detail"]],
+    # etat de la confrontation au natif, repris tel quel du protocole scelle
+    "obs_apparies": VER["n_apparies"], "obs_positifs": VER["n_positifs"],
+    "obs_insuffisants": VER["n_insuffisants"], "obs_correlation": VER["correlation_rang"],
+    # repartition des niveaux de confiance, pour les indicateurs d'accueil
+    "conf_elevee": sum(1 for w in wallets if w["conf_lab"] == "elevee"),
+    "conf_moyenne": sum(1 for w in wallets if w["conf_lab"] == "moyenne"),
+    "conf_faible": sum(1 for w in wallets if w["conf_lab"] == "faible"),
+    "score_max": max(w["score"] for w in wallets),
+    "avec_natif": sum(1 for w in wallets if w.get("obs")),
 }
 out = os.path.join(D, "app_data.json")
 json.dump({"meta": meta, "wallets": wallets}, open(out, "w"), separators=(",", ":"))

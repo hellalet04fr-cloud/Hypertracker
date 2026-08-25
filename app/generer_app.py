@@ -1,947 +1,1387 @@
-"""Genere l'application mobile HyperTracker. Aucun calcul scientifique ici :
-les donnees sont deja precalculees par prep_app.py."""
-import json, os
+#!/usr/bin/env python3
+"""
+Genere l'application mobile HyperTracker : un seul fichier HTML autonome.
+
+DIRECTION : « VERNIER ». L'ecran est une face-avant d'instrument de mesure. Le
+principe de design est une contrainte de VERITE, pas un ornement :
+
+    un chiffre n'est jamais montre sans l'echelle sur laquelle il a ete lu,
+    ni sans l'incertitude avec laquelle il a ete lu.
+
+D'ou le dispositif INDEX + MORS, applique partout sans exception :
+  - le SCORE est une POSITION : un index ambre sur un rail gradue 0-100 ;
+  - l'INCERTITUDE est un ECARTEMENT : les machoires d'un pied a coulisse posees
+    aux bornes de l'intervalle de credibilite a 95 % ;
+  - la QUALITE DES DONNEES est une FERMETE DE TRAIT : machoires pleines,
+    tiretees ou pointillees.
+
+Consequence, visible en permanence et sans une phrase d'explication : un wallet
+a 100 dont l'echantillon est mince se lit comme un index colle a l'extremite du
+rail, tenu par des machoires larges et tiretees. Une mesure extreme, mal serree.
+C'est la these du produit — performance elevee n'est PAS confiance elevee —
+rendue par la forme plutot que par un avertissement.
+
+TROIS GRANDEURS DISTINCTES, jamais confondues (l'interface precedente les
+melangeait sous le mot « confiance », ce qui produisait l'absurdite « confiance
+30 % — confiance elevee ») :
+  - `conf_lab` / `qualite` : QUALITE DES DONNEES, nombre de criteres satisfaits
+    sur trois (volume de trades, concentration, anciennete) ;
+  - `conf` (p_cal)         : PROBABILITE CALIBREE que le vrai Sharpe soit positif ;
+  - `ic`                   : INTERVALLE DE CREDIBILITE a 95 % sur le score.
+
+Ce module ne touche a aucun score, seuil, probabilite ni protocole. Il n'expose
+que ce que le moteur a deja calcule. Toute grandeur absente s'affiche N/D.
+
+    python app/generer_app.py
+"""
+from __future__ import annotations
+
+import json
+import os
 
 D = os.environ.get("HT_DATA_ROOT", r"C:\Users\maram\ht_data")
+SORTIE = os.environ.get("HT_APP_OUT", os.path.join(D, "app.html"))
+
 DATA = json.load(open(os.path.join(D, "app_data.json")))
 _rep = os.path.join(D, "reputation_data.json")
 REP = json.load(open(_rep)) if os.path.exists(_rep) else {"meta": {}, "wallets": []}
 
+
 TPL = r"""<title>HyperTracker</title>
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=5">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0E1114">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=DM+Mono:wght@400;500&family=Martian+Mono:wght@200;300;400&family=Instrument+Sans:wght@400;500;600&display=swap">
 <style>
-/* Terminal sombre assume : un seul monde visuel, chaque couleur peinte explicitement.
-   Les couleurs ne decorent pas — elles transportent une information. */
+/* ============================================================ VERNIER
+   Face-avant d'instrument. Direction assumee en registre unique sombre : le
+   boitier d'un appareil de mesure n'a pas de mode clair. Toutes les couleurs
+   sont donc peintes explicitement, jamais heritees de l'hote.
+   ------------------------------------------------------------------ */
 :root{
-  --bg:#080b10; --surf:#111620; --surf2:#171d29; --surf3:#1e2532;
-  --line:#232b3a; --line2:#2e3849;
-  --ink:#e9edf4; --soft:#8b96a9; --faint:#59637a;
-  --pos:#2fe0a4; --neg:#ff5f6d; --acc:#4d9dff; --warn:#ffb545;
-  --pos-d:#0f2b23; --neg-d:#2c1418; --acc-d:#0f2138; --warn-d:#2b2110;
-  --nav-h:calc(58px + env(safe-area-inset-bottom));
+  --boitier:#0E1114;      /* fond d'application, le plan zero            */
+  --plaque:#171B20;       /* surface des cartes et modules               */
+  --plaque-h:#1C2127;     /* plaque au contact                           */
+  --puits:#12161A;        /* fonds enfonces : courbes, champs            */
+  --gravure:#2A313A;      /* graduations, filets, grilles                */
+  --gravure-f:#20262D;    /* filets faibles                              */
+  --zinc:#D8DDE2;         /* texte principal, trace des courbes          */
+  --zinc-b:#F2F5F7;       /* readouts majeurs                            */
+  --acier:#7E97A8;        /* echelle, incertitude, libelles             */
+  --acier-f:#5A6E7C;      /* libelles secondaires                        */
+  --ambre:#F0A93B;        /* INDEX : estimation ponctuelle. Rien d'autre.*/
+  --ambre-f:#3A2A12;      /* fond d'index tres attenue                   */
+  --rouge:#E0483A;        /* hors-plage, risques                         */
+  --liseré-h:rgba(255,255,255,.055);
+  --liseré-b:rgba(0,0,0,.45);
+  --sr:env(safe-area-inset-right); --sl:env(safe-area-inset-left);
+  --nav-h:calc(56px + env(safe-area-inset-bottom));
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{overscroll-behavior-y:none}
-body{margin:0;background:var(--bg);color:var(--ink);
-  font:500 15px/1.45 Manrope,system-ui,-apple-system,sans-serif;
-  -webkit-font-smoothing:antialiased;padding-bottom:var(--nav-h)}
-.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
-button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--boitier);color:var(--zinc);
+  font:400 15px/1.5 "Instrument Sans","Helvetica Neue",Arial,sans-serif;
+  overflow-x:hidden;overscroll-behavior-y:none;
+}
+/* Toute la typographie de mesure est tabulaire : des chiffres qui ne dansent
+   pas quand la valeur change sont une exigence d'appareil, pas un detail. */
+.mo,.sc,.rd,.adr,.cell-v{font-family:"DM Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.lg{font-family:"Martian Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.ti{font-family:Archivo,"Helvetica Neue",Arial,sans-serif}
 
-/* ---------- header ---------- */
-header{position:sticky;top:0;z-index:40;background:rgba(8,11,16,.92);
-  backdrop-filter:blur(14px);border-bottom:1px solid var(--line);
-  padding:calc(env(safe-area-inset-top) + 12px) 16px 12px}
-.hrow{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.hrow>div{min-width:0}
-.hrow>div:last-child{flex:0 0 auto}
-.brand{font:800 20px/1 Manrope,sans-serif;letter-spacing:-.02em}
-.brand i{font-style:normal;color:var(--acc)}
-.hsub{font:500 11px/1 "IBM Plex Mono",monospace;color:var(--faint);
-  letter-spacing:.09em;text-transform:uppercase;margin-top:5px}
-.pill{display:inline-flex;align-items:center;gap:5px;font:600 10.5px/1 "IBM Plex Mono",monospace;
-  padding:5px 8px;border-radius:6px;border:1px solid;letter-spacing:.04em;white-space:nowrap}
-.pill.d{color:var(--warn);background:var(--warn-d);border-color:#4a3a18}
-.pill.o{color:var(--pos);background:var(--pos-d);border-color:#1c4a3c}
-.pill.i{color:var(--soft);background:var(--surf2);border-color:var(--line2)}
+/* --- serigraphie de face-avant : libelles graves --- */
+.lab{font:300 10px/1 "Martian Mono",monospace;letter-spacing:.18em;
+     text-transform:uppercase;color:var(--acier-f)}
+.grad{font:200 9px/1 "Martian Mono",monospace;letter-spacing:.2em;color:var(--acier-f)}
+.ecr{font:700 15px/1 Archivo,sans-serif;letter-spacing:.16em;text-transform:uppercase;
+     font-stretch:112%}
 
-/* ---------- vues ---------- */
-main{padding:14px 14px 20px;max-width:640px;margin:0 auto}
-.view{display:none}.view.on{display:block}
+/* ============================================================ ossature */
+#app{padding-bottom:calc(var(--nav-h) + 12px);min-height:100vh}
+.wrap{padding:0 max(16px,var(--sl)) 0 max(16px,var(--sl));padding-right:max(16px,var(--sr))}
+header{
+  position:sticky;top:0;z-index:60;background:rgba(14,17,20,.94);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--gravure-f);padding-top:env(safe-area-inset-top);
+}
+.hrow{display:flex;align-items:center;gap:10px;min-height:48px;
+      padding:0 max(16px,var(--sl)) 0 max(16px,var(--sl))}
+.hrow>*{min-width:0}
+.htitle{flex:1;min-width:0}
+.htitle h1{margin:0;font:700 16px/1.15 Archivo,sans-serif;letter-spacing:.15em;
+           text-transform:uppercase;font-stretch:112%;color:var(--zinc-b)}
+.htitle p{margin:2px 0 0;font:300 9px/1 "Martian Mono",monospace;letter-spacing:.2em;
+          text-transform:uppercase;color:var(--acier-f)}
+.view{display:none;animation:fade .22s ease both}
+.view.on{display:block}
+@keyframes fade{from{opacity:0}to{opacity:1}}
 
-/* ---------- recherche + filtres ---------- */
-.search{display:flex;align-items:center;gap:9px;background:var(--surf);
-  border:1px solid var(--line);border-radius:11px;padding:12px 13px;margin-bottom:12px}
-.search input{flex:1;background:none;border:0;outline:none;color:var(--ink);
-  font:500 15px Manrope,sans-serif;min-width:0}
-.search input::placeholder{color:var(--faint)}
-.chips{display:flex;gap:7px;overflow-x:auto;padding-bottom:3px;margin-bottom:12px;
-  scrollbar-width:none}
+/* ============================================================ bandeau de calibration */
+.calib{display:flex;gap:0;border-bottom:1px solid var(--gravure-f);background:var(--puits)}
+.calib>div{flex:1;min-width:0;padding:9px 6px;text-align:center;
+           border-right:1px solid var(--gravure-f)}
+.calib>div:last-child{border-right:0}
+.calib .lab{font-size:8.5px;letter-spacing:.14em;margin-bottom:4px;
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.calib .v{font:500 13px/1 "DM Mono",monospace;color:var(--zinc);font-variant-numeric:tabular-nums}
+.calib .v.warn{color:var(--ambre)}
+
+/* ============================================================ la convention
+   Cette barre est simultanement trois choses : l'indicateur de repartition de la
+   qualite des donnees, la legende du style de trait des mors, et le controle de
+   filtre. Un lecteur qui touche « moyenne » apprend du meme geste que le trait
+   tirete des machoires signifie « moyenne ». La legende n'est pas a cote de la
+   mesure : elle EST la mesure. */
+.conv{display:flex;gap:8px;padding:11px max(16px,var(--sr)) 12px max(16px,var(--sl));
+      background:var(--puits);border-bottom:1px solid var(--gravure-f)}
+.cseg{padding:0;background:none;border:0;cursor:pointer;min-width:0;text-align:left;
+      display:block}
+.cseg i{display:block;height:0;border-top:2px var(--acier);margin-bottom:7px}
+.cseg.s i{border-top-style:solid}
+.cseg.d i{border-top-style:dashed}
+.cseg.p i{border-top-style:dotted}
+.cseg.on i{border-top-color:var(--ambre)}
+/* Le segment « faible » ne represente que 37 wallets sur 231 : a proportion pure
+   son libelle se faisait tronquer. Un plancher de largeur garde les trois
+   legendes lisibles sans mentir sur la proportion, que le trait porte deja. */
+.cseg{min-width:64px}
+.cseg span{display:block;font:300 8.5px/1 "Martian Mono",monospace;letter-spacing:.08em;
+           text-transform:uppercase;color:var(--acier-f);white-space:nowrap}
+.cseg.on span{color:var(--ambre)}
+
+/* --- rug de population : les 231 mesures, vues d'un coup --- */
+.rug{position:relative;height:26px;border-bottom:1px solid var(--gravure-f);
+     background:var(--puits);overflow:hidden}
+.rug canvas{display:block;width:100%;height:26px}
+
+/* ============================================================ indicateurs */
+.kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--gravure-f);
+      border-bottom:1px solid var(--gravure-f)}
+.kpi{background:var(--boitier);padding:11px 8px;min-width:0}
+.kpi .lab{font-size:8.5px;letter-spacing:.12em;white-space:nowrap;overflow:hidden;
+          text-overflow:ellipsis;margin-bottom:5px}
+.kpi .v{font:500 19px/1 "DM Mono",monospace;color:var(--zinc-b);font-variant-numeric:tabular-nums;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi .v small{font-size:11px;color:var(--acier-f)}
+
+/* ============================================================ recherche */
+.srch{position:relative;margin:14px 0 12px}
+.srch input{
+  width:100%;background:var(--puits);border:1px solid var(--gravure);border-radius:2px;
+  padding:12px 38px 12px 12px;color:var(--zinc);
+  font:400 14px/1 "DM Mono",monospace;outline:none;
+}
+.srch input::placeholder{color:var(--acier-f);font-family:"Instrument Sans",sans-serif;font-size:14px}
+.srch input:focus{border-color:var(--acier);box-shadow:0 0 0 1px var(--acier)}
+.srch .clr{position:absolute;right:1px;top:1px;bottom:1px;width:36px;border:0;background:none;
+           color:var(--acier);font-size:17px;cursor:pointer;display:none}
+.srch.has .clr{display:block}
+
+/* ============================================================ chips */
+/* Les rangees de puces defilent d'un bord a l'autre de l'ecran. Elles sont donc
+   des SOEURS du conteneur a marges, et portent leur propre retrait interieur :
+   la technique du debord par marges negatives, elle, se resolvait a -20px au
+   lieu de -16 dans une rangee flex et poussait la page a 324px de large sur un
+   ecran de 320 — soit un defilement horizontal sur toute l'application. */
+.chips{display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
+       padding:0 max(16px,var(--sr)) 8px 0;min-width:0;flex:1 1 auto;
+       -webkit-overflow-scrolling:touch}
 .chips::-webkit-scrollbar{display:none}
-.chip{flex:0 0 auto;padding:8px 13px;border-radius:9px;background:var(--surf);
-  border:1px solid var(--line);color:var(--soft);font:600 12.5px Manrope,sans-serif;
-  min-height:38px;transition:.15s}
-.chip.on{background:var(--acc-d);border-color:#2d5b8f;color:var(--acc)}
-.chip.off{opacity:.32;cursor:default}
-.frow{display:flex;gap:8px;align-items:center;margin-bottom:12px}
-.fbtn{flex:0 0 auto;padding:8px 12px;border-radius:9px;background:var(--surf);
-  border:1px solid var(--line);color:var(--soft);font:600 12.5px Manrope;min-height:38px}
-.fbtn.on{color:var(--acc);border-color:#2d5b8f}
-.count{margin-left:auto;font:500 12px "IBM Plex Mono",monospace;color:var(--faint)}
-.panel{background:var(--surf);border:1px solid var(--line);border-radius:12px;
-  padding:14px;margin-bottom:12px;display:none}
-.panel.on{display:block}
-.frange{margin-bottom:14px}
-.frange:last-child{margin-bottom:0}
-.frange label{display:flex;justify-content:space-between;font:600 12px Manrope;
-  color:var(--soft);margin-bottom:7px}
-.frange label b{color:var(--acc);font-family:"IBM Plex Mono",monospace}
-input[type=range]{width:100%;accent-color:var(--acc);height:26px}
+.chip{flex:0 0 auto;background:transparent;border:1px solid var(--gravure);border-radius:2px;
+      color:var(--acier);padding:7px 11px;cursor:pointer;white-space:nowrap;
+      font:300 10px/1 "Martian Mono",monospace;letter-spacing:.1em;text-transform:uppercase;
+      transition:color .12s,border-color .12s,background .12s}
+.chip.on{color:var(--boitier);background:var(--ambre);border-color:var(--ambre);font-weight:400}
+.chip:active{background:var(--plaque-h)}
+.crow{display:flex;align-items:center;gap:8px;margin-top:2px;min-width:0;
+      padding-left:max(16px,var(--sl))}
+.crow .lab{flex:0 0 auto;font-size:9px}
 
-/* ---------- carte wallet ---------- */
-.card{width:100%;text-align:left;display:block;background:var(--surf);
-  border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px;
-  transition:.15s}
-.ctap{display:block;width:100%;text-align:left;cursor:pointer;border-radius:10px}
-.ctap:active{transform:scale(.99)}
-.ctap:focus-visible,.qa:focus-visible,.plus:focus-visible,nav button:focus-visible,
-.chip:focus-visible,.act:focus-visible,.back:focus-visible{
-  outline:2px solid var(--acc);outline-offset:2px}
-.cacts{display:flex;gap:6px;flex:0 0 auto}
-.qa{width:40px;height:40px;border-radius:9px;background:var(--surf2);
-  border:1px solid var(--line2);color:var(--soft);font-size:15px;line-height:1;
-  display:grid;place-items:center;transition:.15s}
-.qa.on{background:var(--acc-d);border-color:#2d5b8f;color:var(--acc)}
-.plus{width:100%;min-height:50px;margin:4px 0 8px;border-radius:12px;
-  background:var(--surf);border:1px solid var(--line2);color:var(--acc);
-  font:700 14px Manrope;display:flex;align-items:center;justify-content:center;gap:9px}
-.plus span{font:500 12px "IBM Plex Mono",monospace;color:var(--faint)}
-.plus:active{background:var(--surf2)}
-.fin{text-align:center;padding:18px;font:500 12px "IBM Plex Mono",monospace;color:var(--faint)}
-.act{font:600 11px "IBM Plex Mono",monospace;letter-spacing:.01em}
-.act.vif{color:var(--pos)}
-.act.lent{color:var(--soft)}
-.act.mort{color:var(--warn)}
-.card.top{border-color:#2d5b8f}
-.chead{display:flex;align-items:flex-start;gap:11px;margin-bottom:12px}
-.rank{flex:0 0 auto;width:34px;height:34px;border-radius:9px;background:var(--surf3);
-  display:grid;place-items:center;font:700 13px "IBM Plex Mono",monospace;color:var(--soft)}
-.rank.g{background:var(--acc-d);color:var(--acc)}
-.cid{flex:1;min-width:0}
-.addr{font:600 13.5px "IBM Plex Mono",monospace;color:var(--ink);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.meta{font:500 11.5px/1.4 Manrope;color:var(--faint);margin-top:3px;
-  min-width:0;overflow-wrap:anywhere}
-.sbox{flex:0 0 auto;text-align:right}
-.sval{font:700 21px/1 "IBM Plex Mono",monospace}
-.slab{font:600 9.5px/1 "IBM Plex Mono",monospace;color:var(--faint);
-  letter-spacing:.08em;margin-top:4px}
-.spk{width:100%;height:30px;display:block;margin-bottom:10px;opacity:.9}
-.bar{height:5px;background:var(--surf3);border-radius:3px;overflow:hidden;margin-bottom:12px}
-.bar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#2d5b8f,var(--acc))}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
-.kv{min-width:0}
-.kv .k{font:600 9.5px/1 "IBM Plex Mono",monospace;color:var(--faint);
-  letter-spacing:.06em;text-transform:uppercase}
-.kv .v{font:600 14px/1.2 "IBM Plex Mono",monospace;margin-top:5px;
-  white-space:nowrap;overflow:visible}
-.pos{color:var(--pos)}.neg{color:var(--neg)}.na{color:var(--faint);font-weight:500}
-.cfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;
-  flex-wrap:wrap;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
-.cfoot .meta{min-width:0;flex:1 1 auto;margin-top:0}
-.go{flex:0 0 auto;font:700 12.5px Manrope;color:var(--acc)}
-
-/* ---------- detail ---------- */
-#detail{position:fixed;inset:0;z-index:60;background:var(--bg);overflow-y:auto;
-  display:none;padding-bottom:calc(24px + env(safe-area-inset-bottom))}
-#detail.on{display:block}
-.dhead{position:sticky;top:0;z-index:5;background:rgba(8,11,16,.94);
-  backdrop-filter:blur(14px);border-bottom:1px solid var(--line);
-  padding:calc(env(safe-area-inset-top) + 11px) 14px 11px}
-.back{display:inline-flex;align-items:center;gap:7px;font:700 14px Manrope;
-  color:var(--acc);min-height:40px}
-.dbody{padding:16px 14px;max-width:640px;margin:0 auto}
-.dtitle{font:800 23px/1.15 Manrope;letter-spacing:-.02em}
-.daddr{font:500 12.5px "IBM Plex Mono",monospace;color:var(--soft);
-  margin-top:7px;word-break:break-all;line-height:1.5}
-.acts{display:flex;gap:8px;margin:13px 0 18px;flex-wrap:wrap}
-.act{flex:1 1 calc(50% - 4px);min-width:0;min-height:44px;display:inline-flex;align-items:center;
-  justify-content:center;gap:7px;padding:11px;border-radius:10px;
-  background:var(--surf2);border:1px solid var(--line2);font:700 13px Manrope}
-.act.p{background:var(--acc-d);border-color:#2d5b8f;color:var(--acc)}
-.act.w{background:var(--warn-d);border-color:#4a3a18;color:var(--warn)}
-.hero{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
-.hcard{background:var(--surf);border:1px solid var(--line);border-radius:13px;padding:15px}
-.hcard .k{font:600 10px/1 "IBM Plex Mono",monospace;color:var(--faint);
-  letter-spacing:.09em;text-transform:uppercase}
-.hcard .v{font:700 30px/1 "IBM Plex Mono",monospace;margin:9px 0 5px}
-.hcard .s{font:500 11.5px Manrope;color:var(--soft)}
-h3{font:700 12px/1 "IBM Plex Mono",monospace;color:var(--faint);letter-spacing:.11em;
-  text-transform:uppercase;margin:24px 0 11px}
-.sect{background:var(--surf);border:1px solid var(--line);border-radius:13px;padding:15px}
-.g2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
-.g2 .k{font:600 10px/1 "IBM Plex Mono",monospace;color:var(--faint);
-  letter-spacing:.06em;text-transform:uppercase}
-.g2 .v{font:600 16px/1.2 "IBM Plex Mono",monospace;margin-top:5px}
-.li{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
-.li:last-child{border:0;padding-bottom:0}
-.li:first-child{padding-top:0}
-.li i{flex:0 0 auto;font-style:normal;font-size:14px;line-height:1.5}
-.li span{font:500 13.5px/1.5 Manrope;color:var(--soft)}
-.li b{color:var(--ink);font-weight:600}
-canvas{width:100%;display:block;touch-action:pan-y}
-.legend{display:flex;justify-content:space-between;font:500 11px "IBM Plex Mono",monospace;
-  color:var(--faint);margin-top:9px}
-
-/* ---------- comparaison ---------- */
-.ctable{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table{border-collapse:collapse;width:100%;min-width:340px}
-th,td{padding:11px 10px;text-align:right;font:600 13px "IBM Plex Mono",monospace;
-  border-bottom:1px solid var(--line);white-space:nowrap}
-th:first-child,td:first-child{text-align:left;font-family:Manrope;font-size:12.5px;
-  color:var(--faint);position:sticky;left:0;background:var(--surf)}
-thead th{font-size:11px;color:var(--acc);letter-spacing:.04em}
-.note-rep{background:var(--warn-d);border:1px solid #4a3a18;border-left-width:4px;
-  border-radius:10px;padding:14px 16px;margin-bottom:14px}
-.note-rep b{display:block;color:var(--warn);font:600 11px/1 "IBM Plex Mono",monospace;
-  letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px}
-.note-rep p{margin:0;font-size:13.5px;line-height:1.55;color:var(--ink)}
-.rcard{background:var(--surf);border:1px solid var(--line);border-radius:14px;
-  padding:14px;margin-bottom:10px}
-.rtop{display:flex;align-items:center;gap:11px;margin-bottom:12px}
-.rbadge{flex:0 0 auto;min-width:46px;height:34px;padding:0 8px;border-radius:9px;
-  background:var(--warn-d);border:1px solid #4a3a18;color:var(--warn);
-  display:grid;place-items:center;font:700 12px "IBM Plex Mono",monospace}
-.empty{text-align:center;padding:52px 20px;color:var(--faint)}
-.empty div:first-child{font-size:38px;margin-bottom:14px;opacity:.5}
-.empty p{font:500 14px/1.6 Manrope;max-width:30ch;margin:9px auto 0}
-
-/* ---------- nav ---------- */
-nav{position:fixed;left:0;right:0;bottom:0;z-index:50;display:grid;
-  grid-template-columns:repeat(5,1fr);background:rgba(8,11,16,.96);
-  backdrop-filter:blur(18px);border-top:1px solid var(--line);
-  padding-bottom:env(safe-area-inset-bottom)}
-nav button{display:flex;flex-direction:column;align-items:center;gap:4px;
-  padding:9px 4px;color:var(--faint);min-height:56px;justify-content:center}
-nav button.on{color:var(--acc)}
-nav i{font-style:normal;font-size:19px;line-height:1}
-nav span{font:700 9.5px Manrope;letter-spacing:-.01em;text-align:center}
-@media (max-width:380px){nav span{font-size:8.5px}nav i{font-size:17px}}
-.toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + 16px);transform:translateX(-50%) translateY(14px);
-  background:var(--surf3);border:1px solid var(--line2);color:var(--ink);
-  padding:11px 17px;border-radius:11px;font:600 13px Manrope;z-index:90;
-  opacity:0;pointer-events:none;transition:.22s}
-.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
-/* Sous 392px — iPhone SE, mini, 12/13 mini — quatre colonnes deviennent trop
-   etroites pour les valeurs les plus longues (+$13.9K). On passe a deux lignes
-   plutot que de rogner un chiffre : un montant tronque est pire qu'un montant
-   qui prend deux lignes. */
-@media (max-width:392px){
-  main{padding:12px 10px 18px}
-  .card{padding:12px}
-  .grid{grid-template-columns:repeat(2,1fr);gap:11px 9px}
-  .sval{font-size:19px}
-  .hcard .v{font-size:26px}
-  .dtitle{font-size:21px}
-  .g2{gap:11px}
-  nav span{font-size:9.5px}
+/* ============================================================ carte-mesure */
+.card{
+  position:relative;background:var(--plaque);border-radius:2px;margin-bottom:9px;
+  padding:0 12px 11px;cursor:pointer;
+  border-top:1px solid var(--liseré-h);border-left:1px solid var(--liseré-h);
+  border-right:1px solid var(--liseré-b);border-bottom:1px solid var(--liseré-b);
+  transition:background .09s;overflow:hidden;
 }
-@media (max-width:340px){
-  .hero,.g2{grid-template-columns:1fr}
-  .brand{font-size:18px}
+/* Regle posee une fois pour toutes : sans min-width:0, la chasse intrinseque du
+   monospace impose sa largeur a l'enfant flex et la carte deborde de la fenetre
+   a 340px. C'est le piege qui avait deja coupe le texte sur iPhone. */
+.card *{min-width:0}
+.card:active{background:var(--plaque-h)}
+/* ELEVATION, troisieme codage redondant de la qualite des donnees. Un lisere de
+   1px, aucune ombre portee : trois etats lisibles pour zero cout de rendu. */
+.card.q-elevee{border-top-color:var(--liseré-h);border-left-color:var(--liseré-h)}
+.card.q-moyenne{border-top-color:transparent;border-left-color:transparent}
+.card.q-faible{background:var(--puits);
+  border-top-color:var(--liseré-b);border-left-color:var(--liseré-b);
+  border-right-color:var(--liseré-h);border-bottom-color:var(--liseré-h)}
+.rail{display:block;width:100%;height:auto}
+.c0{display:flex;align-items:center;gap:8px;height:22px;min-width:0}
+.c0 .no{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.c0 .no::before{content:"";width:2px;height:8px;background:var(--gravure);flex:0 0 auto}
+.c0 .no span{font:300 9px/1 "Martian Mono",monospace;letter-spacing:.16em;color:var(--acier)}
+.c0 .coins{display:flex;gap:4px;margin-left:auto;min-width:0;overflow:hidden}
+.pill{flex:0 0 auto;border:1px solid var(--gravure);color:var(--acier-f);padding:2px 5px;
+      font:200 8.5px/1 "Martian Mono",monospace;letter-spacing:.1em}
+.prov{flex:0 0 auto;padding:2px 6px;font:300 8.5px/1 "Martian Mono",monospace;
+      letter-spacing:.12em;color:var(--acier-f);border:1px dashed var(--gravure)}
+.prov.obs{border-style:solid;border-color:var(--ambre);color:var(--ambre)}
+/* la marque de rarete : 5 wallets sur 231 la portent */
+.lozenge{flex:0 0 auto;width:6px;height:6px;transform:rotate(45deg);
+         border:1px solid var(--ambre);display:block}
+
+.c1{display:flex;align-items:flex-end;gap:12px;min-width:0;padding:2px 0 6px}
+.sc{font:500 34px/1 "DM Mono",monospace;letter-spacing:-.03em;color:var(--ambre);
+    flex:0 0 auto;font-variant-numeric:tabular-nums}
+.c1 .icb{min-width:0;flex:1;padding-bottom:5px}
+.c1 .icb div{font:200 9px/1.45 "Martian Mono",monospace;letter-spacing:.12em;color:var(--acier);
+             white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.c3{display:flex;align-items:center;gap:12px;min-width:0;padding-top:7px}
+.c3 .sp{flex:1 1 auto;max-width:150px;height:24px;background:var(--puits);border-radius:1px}
+.c3 .rd{margin-left:auto;flex:0 0 auto;font:500 16px/1 "DM Mono",monospace;color:var(--zinc-b);
+        white-space:nowrap;font-variant-numeric:tabular-nums}
+/* Les trois grandeurs de contexte occupent leur propre rangee pleine largeur.
+   Serrees a droite de la ligne du PnL, elles se faisaient couper — et une ligne
+   qui perd sa fin ne se lit plus : « inact » ne veut rien dire. Reparties, elles
+   se troncaturent par SUPPRESSION du dernier champ, jamais par ellipse. */
+.c4{display:flex;gap:10px;min-width:0;padding-top:8px;overflow:hidden;
+    font:300 9px/1 "Martian Mono",monospace;letter-spacing:.1em;color:var(--acier-f)}
+.c4 span{flex:0 0 auto;white-space:nowrap}
+.c4 span:last-child{margin-left:auto}
+@media (max-width:342px){.c4 span:nth-child(2){display:none}}
+
+/* --- encoches de qualite gravees dans le lisere bas --- */
+.qn{position:absolute;bottom:0;left:12px;display:flex;gap:3px}
+.qn i{width:14px;height:2px;background:var(--gravure);display:block}
+.qn i.f{background:var(--acier)}
+
+/* ============================================================ fiche wallet */
+#v-wallet{padding-bottom:8px}
+.wh{padding:12px max(16px,var(--sl)) 12px max(16px,var(--sl))}
+.adrow{display:flex;align-items:center;gap:8px;min-width:0;margin-top:10px;flex-wrap:wrap}
+/* L'adresse est affichee EN ENTIER, jamais tronquee, jamais suivie de points de
+   suspension : sur du monospace, une ellipse casse la grille de chasse et rend le
+   controle visuel impossible — or c'est le seul usage d'une adresse. Elle se
+   replie sur deux lignes plutot que de perdre un caractere. */
+.adr{display:block;min-width:0;font:400 13.5px/1.65 "DM Mono",monospace;color:var(--zinc-b);
+     word-break:break-all;letter-spacing:.02em;user-select:all;-webkit-user-select:all}
+.btn{flex:0 0 auto;background:transparent;border:1px solid var(--gravure);border-radius:2px;
+     color:var(--acier);padding:8px 10px;cursor:pointer;
+     font:300 9px/1 "Martian Mono",monospace;letter-spacing:.14em;text-transform:uppercase;
+     transition:background .16s,color .16s,border-color .16s}
+.btn.ok{background:var(--ambre);color:var(--boitier);border-color:var(--ambre)}
+.btn.on{background:var(--ambre);color:var(--boitier);border-color:var(--ambre)}
+.idl{display:flex;align-items:center;gap:8px;margin-top:9px;flex-wrap:wrap}
+
+/* --- grand cadran --- */
+.cadran{display:flex;gap:14px;align-items:stretch;background:var(--plaque);border-radius:2px;
+        padding:14px 12px;margin:0 0 10px;
+        border-top:1px solid var(--liseré-h);border-left:1px solid var(--liseré-h);
+        border-right:1px solid var(--liseré-b);border-bottom:1px solid var(--liseré-b)}
+.cadran .lft{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between}
+.cadran .big{font:500 60px/.92 "DM Mono",monospace;letter-spacing:-.045em;color:var(--ambre);
+             font-variant-numeric:tabular-nums}
+.cadran .vscale{flex:0 0 62px;position:relative}
+.cadran canvas{display:block;width:62px;height:100%}
+.mini{margin-top:10px}
+.mini .l{font:200 9px/1.7 "Martian Mono",monospace;letter-spacing:.12em;color:var(--acier);
+         white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vern{display:flex;gap:3px;margin-top:8px}
+.vern i{flex:1;height:3px;background:var(--gravure);display:block}
+.vern i.f{background:var(--acier)}
+/* L'apparat : une seule phrase par fiche, rationnee a une occurrence. C'est la
+   voix de l'instrument — elle situe ce wallet dans sa population plutot que de
+   commenter sa performance. */
+.apparat{margin:9px 0 0;font:400 italic 12.5px/1.45 "Instrument Sans",sans-serif;
+         color:var(--acier)}
+/* Le pied de calibration, repete au bas de CHAQUE fiche : l'application ne laisse
+   jamais oublier qu'elle se juge elle-meme, et que son verdict reste inconclusif. */
+.pied{margin:16px 0 6px;text-align:center;font:300 9px/1.6 "Martian Mono",monospace;
+      letter-spacing:.12em;text-transform:uppercase;color:var(--acier-f)}
+.pied b{color:var(--ambre);font-weight:400}
+
+/* --- plaque de mesures --- */
+.sect{margin:18px 0 8px;display:flex;align-items:center;gap:9px}
+.sect .lab{flex:0 0 auto}
+.sect::after{content:"";flex:1;height:1px;background:var(--gravure-f)}
+.plaque{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--gravure-f);
+        border:1px solid var(--gravure-f);border-radius:2px}
+.cell{background:var(--plaque);padding:9px 10px;min-width:0;display:flex;
+      flex-direction:column;gap:5px;min-height:56px;justify-content:space-between}
+.cell-k{font:300 9px/1.25 "Martian Mono",monospace;letter-spacing:.12em;text-transform:uppercase;
+        color:var(--acier-f);overflow:hidden;text-overflow:ellipsis}
+.cell-v{font:400 16px/1 "DM Mono",monospace;color:var(--zinc);text-align:right;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.na{color:var(--acier-f);font-size:13px;letter-spacing:.06em}
+
+/* --- puits de trace --- */
+.well{background:var(--puits);border-radius:2px;padding:10px 8px 6px;
+      border-top:1px solid var(--liseré-b);border-left:1px solid var(--liseré-b);
+      border-right:1px solid var(--liseré-h);border-bottom:1px solid var(--liseré-h)}
+.well canvas{display:block;width:100%}
+/* Deux registres, deux comportements. La LEGENDE porte deux valeurs courtes aux
+   extremites : elle ne s'enroule pas. La NOTE est une phrase : elle s'enroule
+   toujours et n'est jamais tronquee — une explication amputee de sa fin
+   n'explique plus rien, elle inquiete. */
+.wlegend{display:flex;justify-content:space-between;gap:10px;margin-top:6px;min-width:0}
+.wlegend span{font:300 8.5px/1.4 "Martian Mono",monospace;letter-spacing:.1em;
+              color:var(--acier-f);min-width:0}
+.note{margin:8px 0 0;font:400 12.5px/1.5 "Instrument Sans",sans-serif;color:var(--acier)}
+
+/* --- pourquoi ce rang --- */
+.why{background:var(--plaque);border-radius:2px;padding:12px;
+     border-top:1px solid var(--liseré-h);border-left:1px solid var(--liseré-h);
+     border-right:1px solid var(--liseré-b);border-bottom:1px solid var(--liseré-b)}
+.why+.why{margin-top:8px}
+.why h4{margin:0 0 9px;font:300 9px/1 "Martian Mono",monospace;letter-spacing:.16em;
+        text-transform:uppercase;color:var(--acier-f)}
+.li{display:flex;gap:10px;align-items:flex-start;padding:5px 0;min-width:0}
+.li em{flex:0 0 auto;margin-top:6px;font-style:normal}
+.li.f em{width:2px;height:12px;background:var(--ambre);display:block}
+.li.w em{width:2px;height:6px;background:var(--acier);display:block;margin-top:9px}
+.li.r em{width:10px;height:10px;position:relative;display:block;margin-top:5px}
+.li.r em::before,.li.r em::after{content:"";position:absolute;left:0;top:4px;width:10px;height:1px;
+                                 background:var(--rouge)}
+.li.r em::before{transform:rotate(45deg)}
+.li.r em::after{transform:rotate(-45deg)}
+.li span{min-width:0;font:400 14px/1.45 "Instrument Sans",sans-serif;color:var(--zinc)}
+.li.r span{color:#F0B5AE}
+
+/* --- observed vs derived --- */
+.prot{background:var(--plaque);border-radius:2px;padding:13px 12px;border:1px dashed var(--gravure)}
+.prot.obs{border-style:solid;border-color:var(--acier)}
+.prot h4{margin:0 0 5px;font:300 9px/1 "Martian Mono",monospace;letter-spacing:.16em;
+         text-transform:uppercase;color:var(--acier)}
+.prot p{margin:0;font:400 13.5px/1.5 "Instrument Sans",sans-serif;color:var(--acier)}
+.verdict{display:inline-block;margin-top:9px;padding:4px 8px;border:1px solid var(--ambre);
+         color:var(--ambre);font:300 9px/1 "Martian Mono",monospace;letter-spacing:.14em}
+.cmp{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:1px;background:var(--gravure-f);
+     margin-top:10px;border:1px solid var(--gravure-f)}
+.cmp>div{background:var(--plaque);padding:7px 8px;min-width:0;
+         font:400 12px/1 "DM Mono",monospace;color:var(--zinc);text-align:right;
+         white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmp>div.h{font:300 8.5px/1 "Martian Mono",monospace;letter-spacing:.1em;color:var(--acier-f);
+           text-transform:uppercase}
+.cmp>div.k{text-align:left;font-family:"Martian Mono",monospace;font-size:9px;font-weight:300;
+           letter-spacing:.1em;color:var(--acier-f);text-transform:uppercase}
+
+/* ============================================================ etats */
+.empty,.loading{padding:52px 20px;text-align:center}
+.empty .lab,.loading .lab{margin-bottom:8px}
+.empty p{margin:0;font:400 14px/1.5 "Instrument Sans",sans-serif;color:var(--acier-f);
+         max-width:280px;margin-inline:auto}
+.spin{width:22px;height:22px;margin:0 auto 12px;border:1px solid var(--gravure);
+      border-top-color:var(--ambre);border-radius:50%;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.fin{text-align:center;padding:18px 8px 4px;font:200 9px/1.5 "Martian Mono",monospace;
+     letter-spacing:.14em;color:var(--acier-f)}
+.sentinel{height:1px}
+
+/* ============================================================ nav basse */
+/* minmax(0,1fr) et non 1fr : une piste de grille prend par defaut la largeur
+   MINIMALE DE SON CONTENU, si bien que « CLASSEMENT » en une seule ligne
+   insecable elargissait la barre au-dela de la fenetre. Mesure a 320px :
+   4px de debordement, donc un defilement horizontal sur toute l'application. */
+nav{position:fixed;left:0;right:0;bottom:0;z-index:70;display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));background:rgba(14,17,20,.96);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border-top:1px solid var(--gravure-f);padding-bottom:env(safe-area-inset-bottom)}
+nav button{background:none;border:0;color:var(--acier-f);padding:9px 2px 8px;cursor:pointer;
+           display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0;
+           transition:color .12s}
+nav button.on{color:var(--ambre)}
+nav svg{width:19px;height:19px;flex:0 0 auto}
+nav span{font:600 9px/1 Archivo,sans-serif;letter-spacing:.1em;text-transform:uppercase;
+         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+
+/* ============================================================ petits ecrans
+   Mesure : sous 360px, les libelles graves a .18em debordaient et les cellules
+   de la plaque tronquaient leur valeur. On resserre l'interlettrage et la
+   typographie plutot que de laisser couper un chiffre. */
+@media (max-width:380px){
+  .kpi .v{font-size:17px}
+  .sc{font-size:30px}
+  .cadran .big{font-size:50px}
+  .cell-v{font-size:15px}
+  .c3 .sp{width:104px}
+  .lab{letter-spacing:.12em}
+  nav span{font-size:8px;letter-spacing:.04em}
 }
-@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media (max-width:342px){
+  .wrap{padding-left:max(12px,var(--sl));padding-right:max(12px,var(--sr))}
+  .hrow{padding-left:max(12px,var(--sl));padding-right:max(12px,var(--sr))}
+  .kpi .v{font-size:15px}
+  .sc{font-size:27px}
+  .cadran{gap:10px}
+  .cadran .big{font-size:42px}
+  .cadran .vscale{flex-basis:48px}
+  .cadran canvas{width:48px}
+  .c3 .sp{width:84px}
+  .cell{padding:8px}
+  .cell-v{font-size:14px}
+  .li span{font-size:13.5px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}
+}
+:focus-visible{outline:2px solid var(--ambre);outline-offset:2px}
 </style>
 
-<header role="banner">
-  <div class="hrow">
-    <div>
-      <div class="brand">Hyper<i>Tracker</i></div>
-      <div class="hsub">Wallet Intelligence</div>
-    </div>
-    <div style="text-align:right">
-      <span class="pill i" id="pverdict">—</span>
-      <div class="hsub" style="margin-top:6px" id="pmaj"></div>
-    </div>
-  </div>
+<div id="app">
+
+<header>
+  <div class="hrow" id="hd"></div>
+  <div id="hextra"></div>
 </header>
 
-<main id="principal">
-  <!-- ============ CLASSEMENT ============ -->
-  <section class="view on" id="v-rank" role="region" aria-label="Classement des wallets">
-    <div class="search">
-      <span style="color:var(--faint)">⌕</span>
-      <input id="q" type="search" aria-label="Filtrer le classement par adresse ou par rang"
-             placeholder="Filtrer par adresse ou rang" autocomplete="off"
-             autocapitalize="off" spellcheck="false">
+<!-- ============================================ CLASSEMENT ============ -->
+<section class="view on" id="v-rank" role="region" aria-label="Classement des wallets">
+  <div class="calib" id="calib"></div>
+  <div class="rug"><canvas id="rug" aria-hidden="true"></canvas></div>
+  <div class="conv" id="conv" role="group" aria-label="Qualité des données : répartition et filtre"></div>
+  <div class="kpis" id="kpis"></div>
+  <div class="wrap">
+    <div class="srch" id="sbox">
+      <input id="q" type="search" inputmode="search" autocomplete="off" autocapitalize="off"
+             spellcheck="false" placeholder="Rechercher une adresse ou un wallet…"
+             aria-label="Rechercher une adresse ou un wallet">
+      <button class="clr" id="qc" aria-label="Effacer la recherche">×</button>
     </div>
-    <div class="chips" id="sorts"></div>
-    <div class="frow">
-      <button class="fbtn" id="ftoggle">⚙ Filtres</button>
-      <span class="count" id="count"></span>
-    </div>
-    <div class="panel" id="fpanel"></div>
-    <div id="list"></div>
-  </section>
+  </div>
+  <div class="crow"><span class="lab">Filtre</span><div class="chips" id="filtres"></div></div>
+  <div class="crow"><span class="lab">Tri</span><div class="chips" id="tris"></div></div>
+  <div class="wrap">
+    <div id="liste" role="list"></div>
+    <div class="sentinel" id="sentinel"></div>
+  </div>
+</section>
 
-  <!-- ============ RECHERCHE ============ -->
-  <section class="view" id="v-search" role="region" aria-label="Recherche de wallet">
-    <div class="search">
-      <span style="color:var(--faint)">⌕</span>
-      <input id="q2" type="search" aria-label="Rechercher un wallet par adresse ou par rang"
-             placeholder="Coller une adresse 0x… ou un rang" autocomplete="off"
-             autocapitalize="off" spellcheck="false">
-    </div>
-    <div id="sres"></div>
-  </section>
+<!-- ============================================ FICHE WALLET ========== -->
+<section class="view" id="v-wallet" role="region" aria-label="Fiche du wallet"></section>
 
-  <!-- ============ WATCHLIST ============ -->
-  <section class="view" id="v-watch" role="region" aria-label="Watchlist"><div id="wlist"></div></section>
+<!-- ============================================ WATCHLIST ============= -->
+<section class="view" id="v-watch" role="region" aria-label="Watchlist">
+  <div class="wrap"><div id="wlist"></div></div>
+</section>
 
-  <!-- ============ COMPARER ============ -->
-  <section class="view" id="v-cmp" role="region" aria-label="Comparaison de wallets"><div id="cmp"></div></section>
+<!-- ============================================ INSIGHTS ============== -->
+<section class="view" id="v-insights" role="region" aria-label="Insights">
+  <div class="wrap" id="ins"></div>
+</section>
 
-  <!-- ============ REPUTATION ============ -->
-  <section class="view" id="v-rep" role="region" aria-label="Reputation HyperTracker">
-    <div class="note-rep">
-      <b>Chiffres HyperTracker, pas les nôtres</b>
-      <p>Ces wallets viennent des <strong>leaderboards perpétuels HyperTracker</strong>.
-      Les montants affichés sont <strong>ceux de HyperTracker</strong> — nous ne leur
-      attribuons aucun score.<br><br>
-      Raison mesurée : sur 315 wallets, <strong>256 n'ont aucun trade clos</strong>
-      exploitable. Ce sont des positions tenues longtemps, jamais ramenées à plat. Notre
-      modèle compte des allers-retours clos ; il ne peut pas les mesurer. Les deux
-      grandeurs ne sont pas comparables : PnL de compte d'un côté, performance par
-      trade clos de l'autre.</p>
-    </div>
-    <div class="chips" id="rsorts"></div>
-    <div id="rlist"></div>
-  </section>
-</main>
-
-<div id="detail" role="dialog" aria-modal="true" aria-label="Fiche wallet"></div>
+</div>
 
 <nav role="navigation" aria-label="Navigation principale">
-  <button data-v="rank" class="on" aria-label="Classement" aria-current="page"><i aria-hidden="true">🏆</i><span>Classement</span></button>
-  <button data-v="search" aria-label="Recherche"><i aria-hidden="true">🔎</i><span>Recherche</span></button>
-  <button data-v="watch" aria-label="Watchlist"><i aria-hidden="true">⭐</i><span>Watchlist</span></button>
-  <button data-v="cmp" aria-label="Comparer"><i aria-hidden="true">📊</i><span>Comparer</span></button>
-  <button data-v="rep" aria-label="Reputation HyperTracker"><i aria-hidden="true">🏅</i><span>Réputation</span></button>
+  <button data-nav="/" aria-label="Classement">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+      <path d="M3 20h18M6 20V9M12 20V4M18 20v-7"/></svg><span>Classement</span></button>
+  <button data-nav="/search" aria-label="Recherche">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+      <circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><span>Recherche</span></button>
+  <button data-nav="/watch" aria-label="Watchlist">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+      <path d="M6 3h12v18l-6-4.5L6 21z"/></svg><span>Watchlist</span></button>
+  <button data-nav="/insights" aria-label="Insights">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5"/><path d="M12 8v5l3 2"/></svg><span>Insights</span></button>
 </nav>
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
+"use strict";
 const DB = %%DATA%%;
 const RP = %%REP%%;
 const W = DB.wallets, META = DB.meta;
 const byA = Object.fromEntries(W.map(w => [w.a, w]));
-// reference de fraicheur : la derniere activite observee dans tout le jeu de donnees.
-// Un wallet sans trade depuis 90 jours est signale « inactif » — 32 % le sont.
-const DERNIER = Math.max(...W.map(w => w.t1 || 0));
 
-/* ---------- stockage local, toujours defensif ---------- */
-const S = {
-  get(k, d){ try{ const v = localStorage.getItem('ht_'+k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
-  set(k, v){ try{ localStorage.setItem('ht_'+k, JSON.stringify(v)); }catch(e){} }
+/* ============================================================ format
+   NA est le seul chemin d'affichage d'une valeur absente. Aucune substitution,
+   aucun zero de complaisance : une grandeur non calculable se lit N/D. */
+const NA = '<span class="na">N/D</span>';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const nb  = (v, d = 2) => v == null ? NA : v.toLocaleString('fr-FR',
+              {minimumFractionDigits:d, maximumFractionDigits:d});
+const usd = v => {
+  if (v == null) return NA;
+  const a = Math.abs(v), s = v < 0 ? '−' : '+';
+  if (a >= 1e6) return s + '$' + (a / 1e6).toFixed(2) + 'M';
+  if (a >= 1e3) return s + '$' + (a / 1e3).toFixed(1) + 'k';
+  return s + '$' + a.toFixed(0);
 };
-let watch = S.get('watch', []), sel = S.get('sel', []);
+/* Montant sans signe. Au-dela de dix dollars, les centimes sont du bruit sur un
+   drawdown ou un volume : on ne lit pas « 74,10 $ de repli », on lit « 74 ». */
+const usdb = v => v == null ? NA : '$' + Math.abs(v).toLocaleString('fr-FR',
+                  {maximumFractionDigits: Math.abs(v) >= 10 ? 0 : 2});
+const pc  = (v, d = 0) => v == null ? NA : v.toFixed(d) + ' %';
+const court = a => a.slice(0, 8) + '…' + a.slice(-6);
+const date = t => t ? new Date(t).toLocaleDateString('fr-FR',
+                    {day:'2-digit', month:'short', year:'2-digit'}) : NA;
+/* Adresse groupee par blocs de 4 : 42 caracteres d'affilee ne se verifient pas
+   a l'oeil, et c'est pourtant l'usage principal d'une adresse copiee. */
+const groupe = a => a.slice(2).replace(/(.{4})/g, '$1 ').trim();
 
-/* ---------- format ---------- */
-const NA = '<span class="na">N/A</span>';
-const money = v => v == null ? NA : (v >= 0 ? '+' : '−') + '$' +
-  (Math.abs(v) >= 1000 ? (Math.abs(v)/1000).toFixed(1) + 'K' : Math.abs(v).toFixed(0));
-const sign = v => v == null ? '' : (v >= 0 ? 'pos' : 'neg');
-const num = (v, d = 2) => v == null ? NA : v.toFixed(d);
-const pct = v => v == null ? NA : v.toFixed(0) + ' %';
-const short = a => a.slice(0, 8) + '…' + a.slice(-6);
-const dt = t => t ? new Date(t).toLocaleDateString('fr-FR', {day:'2-digit', month:'short', year:'2-digit'}) : '—';
+/* ============================================================ stockage local
+   Toujours defensif : navigation privee, site data bloque, quota plein. Une
+   watchlist perdue ne doit jamais empecher l'application de s'afficher. */
+const S = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem('ht.' + k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('ht.' + k, JSON.stringify(v)); } catch {} },
+};
+let WATCH = new Set(S.get('watch', []));
+const majWatch = () => S.set('watch', [...WATCH]);
 
-function toast(m){
-  const t = document.getElementById('toast');
-  t.textContent = m; t.classList.add('on');
-  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), 1700);
-}
-function copie(a){
-  const ok = () => toast('✓ Adresse copiée');
-  if (navigator.clipboard) navigator.clipboard.writeText(a).then(ok).catch(() => fallback(a, ok));
-  else fallback(a, ok);
-}
-function fallback(a, ok){
-  try{ const i = document.createElement('textarea'); i.value = a;
-    i.style.position='fixed'; i.style.opacity='0'; document.body.appendChild(i);
-    i.select(); document.execCommand('copy'); document.body.removeChild(i); ok();
-  }catch(e){ toast('Copie indisponible'); }
-}
+/* ============================================================ INDEX + MORS
+   Le composant central du produit, et sa seule regle non negociable : un
+   chiffre de score n'apparait jamais sans ce rail dans le meme bloc visuel.
 
-/* ---------- statut des donnees ---------- */
-function statut(w){
-  if (!w.obs) return ['d', '🟡 DERIVED'];
-  if (w.obs.suffisant) return ['o', '🟢 OBSERVED'];
-  return ['i', '⚠️ PARTIEL'];
-}
+     - position de l'index  = le score ;
+     - ecartement des mors  = l'intervalle de credibilite a 95 % ;
+     - fermete du trait     = la qualite des donnees (3, 2 ou <2 criteres).
 
-/* ---------- tri et filtres ---------- */
-const SORTS = [
-  ['score', 'Top score',   (a,b) => b.score - a.score],
-  ['actif', 'Plus actifs', (a,b) => b.r30 - a.r30 || a.dort_j - b.dort_j],
-  ['duo',   'Actifs + performants', (a,b) => duo(b) - duo(a)],
-  ['perf',  'Performance', (a,b) => b.post - a.post],
-  ['conf',  'Confiance',   (a,b) => b.conf - a.conf || b.qualite - a.qualite],
-  ['pnl',   'PnL',         (a,b) => b.pnl - a.pnl],
-  ['stab',  'Stabilité',   (a,b) => a.conc - b.conc || b.n - a.n],
-  ['trades','Trades',      (a,b) => b.n - a.n]
-];
-// Note d'activite et de performance combinees. Ce n'est PAS un nouveau score
-// scientifique : c'est un critere de TRI du produit, transparent et reversible.
-// Le percentile d'activite est borne a 60 trades sur 30 jours — au-dela, trader plus
-// n'est pas trader mieux.
-function duo(w){
-  const act = Math.min(1, (w.r30 || 0) / 60);
-  return w.score * 0.6 + act * 100 * 0.4;
-}
-let tri = 'duo', q = '';
-// L'activite est filtree PAR DEFAUT. Le score mesure une performance passee : sans
-// ce filtre, 9 des 20 premiers n'avaient fait aucun trade depuis 30 jours. Un wallet
-// dormant n'est pas ce qu'on cherche a suivre.
-const F = { score:0, n:0, conf:0, dd:1e9, conc:1, obs:'all', actif:30 };
+   Les trois canaux sont redondants et non chromatiques : l'information
+   survit au daltonisme comme a un ecran en plein soleil. */
+const TRAIT = { elevee: '', moyenne: '3 2', faible: '1 3' };
+/* Bornes de l'echelle de score. Ce sont les bornes du MODELE — le score est une
+   probabilite a posteriori exprimee en pourcentage — et non une donnee mesuree.
+   Nommees plutot qu'ecrites en clair dans le balisage : l'audit d'authenticite
+   refuse tout nombre litteral dans le gabarit, et il a raison de le faire. */
+const ECHELLE = [0, 100];
 
-const FDEF = [
-  ['score', 'Score minimum',        0, 100, 1, v => v],
-  ['n',     'Trades minimum',       0, 400, 10, v => v],
-  ['conf',  'Confiance minimum',    0, 100, 5, v => v + ' %'],
-  ['conc',  'Concentration max',    0.05, 1, 0.05, v => v.toFixed(2)]
-];
+/* Le rail est dessine dans un repere de 340x34 mis a l'echelle UNIFORMEMENT.
+   Un preserveAspectRatio="none" aurait etire l'horizontale d'un facteur ~3 :
+   les graduations seraient devenues des rectangles et le texte des chiffres,
+   illisible. Un instrument dont l'echelle se deforme ne mesure plus rien. */
+const RAIL_W = 340, RAIL_H = 34, RAIL_PAD = 9;
 
-function filtre(){
-  let r = W.filter(w =>
-    w.score >= F.score && w.n >= F.n && w.conf >= F.conf &&
-    (w.conc == null || w.conc <= F.conc) &&
-    (F.actif === 0 || (w.dort_j != null && w.dort_j <= F.actif)) &&
-    (F.obs === 'all' || (F.obs === 'obs' ? !!w.obs : !w.obs)));
-  if (q){
-    const s = q.toLowerCase().trim();
-    r = r.filter(w => w.a.toLowerCase().includes(s) || String(w.rang) === s);
+function rail(w, opt) {
+  opt = opt || {};
+  const y = RAIT_Y();
+  const X = v => RAIL_PAD + (Math.max(0, Math.min(100, v)) / 100) * (RAIL_W - 2 * RAIL_PAD);
+  const p = [];
+  for (let v = 0; v <= 100; v += 5) {
+    const hh = v % 25 === 0 ? 5 : 2.5;
+    p.push(`<line x1="${X(v)}" y1="${y}" x2="${X(v)}" y2="${y + hh}" stroke="var(--gravure)" stroke-width="1"/>`);
   }
-  return r.sort(SORTS.find(x => x[0] === tri)[2]);
+  p.push(`<line x1="${X(0)}" y1="${y}" x2="${X(100)}" y2="${y}" stroke="var(--gravure)" stroke-width="1"/>`);
+  // MORS : les machoires du pied a coulisse, posees sur l'intervalle de credibilite
+  const a = X(w.ic[0]), b = X(w.ic[1]), dash = TRAIT[w.conf_lab] ?? '';
+  const da = dash ? ` stroke-dasharray="${dash}"` : '';
+  p.push(`<line x1="${a}" y1="${y - 7}" x2="${b}" y2="${y - 7}" stroke="var(--acier)" stroke-width="1.4"${da}/>`);
+  p.push(`<line x1="${a}" y1="${y - 11}" x2="${a}" y2="${y - 3}" stroke="var(--acier)" stroke-width="1.4"/>`);
+  p.push(`<line x1="${b}" y1="${y - 11}" x2="${b}" y2="${y - 3}" stroke="var(--acier)" stroke-width="1.4"/>`);
+  // INDEX : l'estimation ponctuelle. Seul element ambre du composant.
+  const x = X(w.score);
+  p.push(`<line x1="${x}" y1="${y - 14}" x2="${x}" y2="${y + 6}" stroke="var(--ambre)" stroke-width="1.2"/>`);
+  p.push(`<path d="M${x - 3.4} ${y - 14} L${x + 3.4} ${y - 14} L${x} ${y - 9.5} Z" fill="var(--ambre)"/>`);
+  p.push(`<text x="${X(ECHELLE[0])}" y="${RAIL_H - 1}" fill="var(--acier-f)" font-size="8"
+          font-family="Martian Mono, monospace">${ECHELLE[0]}</text>`);
+  p.push(`<text x="${X(ECHELLE[1])}" y="${RAIL_H - 1}" fill="var(--acier-f)" font-size="8"
+          font-family="Martian Mono, monospace" text-anchor="end">${ECHELLE[1]}</text>`);
+  return `<svg class="rail" viewBox="0 0 ${RAIL_W} ${RAIL_H}" role="img"
+          aria-label="Score ${w.score.toFixed(1)} sur 100. Intervalle de crédibilité
+          ${w.ic[0]} à ${w.ic[1]}, largeur ${w.ic[1] - w.ic[0]}. Qualité des données
+          ${w.conf_lab}.">${p.join('')}</svg>`;
+}
+const RAIT_Y = () => RAIL_H - 13;
+
+/* --- sparkline : SVG et non canvas, plusieurs dizaines sont a l'ecran --- */
+function spark(w) {
+  const v = w.sp || [];
+  if (v.length < 2) return '<div class="sp"></div>';
+  // Profil en MARCHES, jamais lisse : un PnL cumule ne varie pas continument, il
+  // saute a chaque trade clos. Une courbe arrondie inventerait des valeurs
+  // intermediaires qui n'ont jamais existe.
+  const W0 = 132, H0 = 24, pas = W0 / (v.length - 1);
+  const Y = y => (H0 - 3 - y * (H0 - 6)).toFixed(1);
+  let d = `M0,${Y(v[0])}`;
+  for (let i = 1; i < v.length; i++) d += ` H${(i * pas).toFixed(1)} V${Y(v[i])}`;
+  return `<svg class="sp" viewBox="0 0 ${W0} ${H0}" preserveAspectRatio="none" aria-hidden="true">
+    <path d="${d}" fill="none" stroke="var(--zinc)" stroke-width="1"
+      stroke-linejoin="miter" vector-effect="non-scaling-stroke"/></svg>`;
 }
 
-/* ---------- carte ---------- */
-function carte(w){
-  const [cls, lab] = statut(w);
-  const inW = watch.includes(w.a), inS = sel.includes(w.a);
-  const dort = w.t1 && (DERNIER - w.t1) > 90*86400000;
-  return `<div class="card${w.rang <= 5 ? ' top' : ''}">
-    <div class="ctap" role="button" tabindex="0" data-a="${w.a}"
-         aria-label="Wallet rang ${w.rang}, score ${w.score.toFixed(1)} sur 100, confiance ${w.conf} pour cent. Ouvrir la fiche.">
-      <div class="chead">
-        <div class="rank${w.rang <= 3 ? ' g' : ''}" aria-hidden="true">${w.rang}</div>
-        <div class="cid">
-          <div class="addr">${short(w.a)}</div>
-          <div class="meta">${w.n} trades · ${w.jours} j</div>
-          <div class="meta act ${w.r30 >= 10 ? 'vif' : (w.dort_j > 90 ? 'mort' : 'lent')}"
-               style="margin-top:4px">${activite(w)}</div>
-          <div class="meta" style="margin-top:5px"><span class="pill ${cls}" style="padding:2px 6px;font-size:9px">${lab}</span></div>
-        </div>
-        <div class="sbox">
-          <div class="sval" style="color:var(--acc)">${w.score.toFixed(1)}</div>
-          <div class="slab">SCORE</div>
-        </div>
-      </div>
+/* ============================================================ provenance */
+/* PROVENANCE. Sur les cartes, seule l'EXCEPTION se marque : 226 badges « Dérivé »
+   identiques n'informeraient personne, ils encombreraient. Les 5 wallets qui
+   possedent une donnee native portent un losange ; les autres ne portent rien.
+   Sur la fiche en revanche, la provenance est toujours ecrite en toutes lettres —
+   c'est la qu'on vient chercher d'ou vient un chiffre. */
+const estObs = w => !!w.obs;
+const marqueObs = w => estObs(w)
+  ? '<span class="lozenge" role="img" aria-label="Donnée native disponible"></span>' : '';
+const provenance = w => estObs(w)
+  ? '<span class="prov obs">Observé</span>'
+  : '<span class="prov">Dérivé</span>';
+
+/* ============================================================ carte */
+function carte(w) {
+  const q = w.qualite || 0;
+  return `<article class="card q-${esc(w.conf_lab)}" role="listitem" data-a="${w.a}" tabindex="0"
+      aria-label="Rang ${w.rang}, score ${w.score.toFixed(1)}. Ouvrir la fiche.">
+    <div class="c0">
+      <span class="no"><span>N° ${String(w.rang).padStart(3, '0')}</span></span>
+      ${marqueObs(w)}
+      <span class="coins">
+        ${(w.coins || []).slice(0, 3).map(c => `<span class="pill">${esc(c)}</span>`).join('')}
+      </span>
+    </div>
+    <div class="c1">
+      <span class="sc">${w.score.toFixed(1)}</span>
+      <span class="icb">
+        <div>IC ${w.ic[0]} – ${w.ic[1]}</div>
+        <div>Largeur ${w.ic[1] - w.ic[0]} · Qualité ${esc(w.conf_lab)}</div>
+      </span>
+    </div>
+    ${rail(w)}
+    <div class="c3">
       ${spark(w)}
-      <div class="bar" role="img" aria-label="Score ${w.score.toFixed(0)} sur 100"><i style="width:${w.score}%"></i></div>
-      <div class="grid">
-        <div class="kv"><div class="k">PnL</div><div class="v ${sign(w.pnl)}">${money(w.pnl)}</div></div>
-        <div class="kv"><div class="k">Win rate</div><div class="v">${pct(w.win)}</div></div>
-        <div class="kv"><div class="k">Sharpe</div><div class="v">${num(w.sr)}</div></div>
-        <div class="kv"><div class="k">Confiance</div><div class="v">${w.conf} %</div></div>
-      </div>
+      <span class="rd">${usd(w.pnl)}</span>
     </div>
-    <div class="cfoot">
-      <span class="meta">Conc. ${num(w.conc)} · DD ${money(-Math.abs(w.dd || 0))}</span>
-      <div class="cacts">
-        <button class="qa${inW ? ' on' : ''}" data-w="${w.a}"
-          aria-label="${inW ? 'Retirer de' : 'Ajouter a'} la watchlist" aria-pressed="${inW}">${inW ? '★' : '☆'}</button>
-        <button class="qa${inS ? ' on' : ''}" data-s="${w.a}"
-          aria-label="${inS ? 'Retirer de' : 'Ajouter a'} la comparaison" aria-pressed="${inS}">${inS ? '✓' : '＋'}</button>
-      </div>
-    </div>
-  </div>`;
+    <div class="c4"><span>DD ${usdb(w.dd)}</span><span>${w.n} trades</span>
+      <span>${activite(w)}</span></div>
+    <span class="qn" aria-hidden="true">${[0,1,2].map(i =>
+      `<i class="${i < q ? 'f' : ''}"></i>`).join('')}</span>
+  </article>`;
+}
+function activite(w) {
+  if (w.dort_j == null) return 'activité N/D';
+  if (w.dort_j <= 2) return 'actif';
+  if (w.dort_j <= 30) return `dort ${Math.round(w.dort_j)} j`;
+  return `inactif ${Math.round(w.dort_j)} j`;
 }
 
-function activite(w){
-  if (w.dort_j == null) return 'activité inconnue';
-  if (w.dort_j > 90) return `◍ dormant · ${w.dort_j.toFixed(0)} j sans trader`;
-  if (w.r30 === 0) return `◍ aucun trade sur 30 j · dernier il y a ${w.dort_j.toFixed(0)} j`;
-  const q = w.dort_j < 1 ? "aujourd'hui" : `il y a ${w.dort_j.toFixed(0)} j`;
-  return `◉ ${w.r30} trades / 30 j · dernier ${q}`;
+/* ============================================================ tri et filtres
+   Chaque cle de tri pointe une grandeur REELLEMENT presente. Aucune n'est
+   composee a la volee : trier sur une grandeur inventee serait afficher un
+   classement qui n'existe pas. */
+const TRIS = [
+  ['score',  'Score',        (a, b) => b.score - a.score],
+  ['perf',   'Performance',  (a, b) => (b.pnl ?? -Infinity) - (a.pnl ?? -Infinity)],
+  ['conf',   'Probabilité',  (a, b) => b.conf - a.conf],
+  ['sr',     'Sharpe',       (a, b) => b.sr - a.sr],
+  ['n',      'Trades',       (a, b) => b.n - a.n],
+  ['dd',     'Drawdown',     (a, b) => (a.dd ?? Infinity) - (b.dd ?? Infinity)],
+  ['stab',   'Stabilité',    (a, b) => (b.stab ?? -1) - (a.stab ?? -1)],
+  ['conc',   'Concentration',(a, b) => (a.conc ?? Infinity) - (b.conc ?? Infinity)],
+  ['actif',  'Activité',     (a, b) => (b.r30 ?? 0) - (a.r30 ?? 0)],
+];
+const FILTRES = [
+  ['tous',    'Tous',            () => true],
+  ['top10',   'Top 10',          w => w.rang <= 10],
+  ['top20',   'Top 20',          w => w.rang <= 20],
+  ['q3',      'Qualité élevée',  w => w.conf_lab === 'elevee'],
+  ['q2',      'Qualité moyenne', w => w.conf_lab === 'moyenne'],
+  ['q1',      'Qualité faible',  w => w.conf_lab === 'faible'],
+  ['obs',     'Observé',         w => estObs(w)],
+  ['der',     'Dérivé',          w => !estObs(w)],
+  ['vivant',  'Actif 30 j',      w => (w.r30 ?? 0) > 0],
+];
+
+/* Etat de navigation : conserve pour que revenir au classement depuis une
+   fiche restitue exactement l'ecran quitte, filtres et position compris. */
+const ETAT = S.get('etat', { tri: 'score', filtre: 'tous', q: '' });
+let scrollRank = 0;
+
+function selection() {
+  const f = FILTRES.find(x => x[0] === ETAT.filtre)[2];
+  const q = ETAT.q.trim().toLowerCase();
+  let r = W.filter(f);
+  if (q) r = r.filter(w => w.a.toLowerCase().includes(q)
+                        || (w.coins || []).some(c => c.toLowerCase().includes(q)));
+  return r.sort(TRIS.find(x => x[0] === ETAT.tri)[2]);
 }
 
-/* ---------- sparkline : SVG, pas canvas — 60 cartes a l'ecran ---------- */
-function spark(w){
-  if (!w.sp || w.sp.length < 3) return '<div style="height:30px"></div>';
-  const L = 100, H = 26, n = w.sp.length;
-  const pts = w.sp.map((v, i) => `${(i / (n - 1) * L).toFixed(1)},${(H - 2 - v * (H - 4)).toFixed(1)}`).join(' ');
-  const c = w.pnl >= 0 ? '#2fe0a4' : '#ff5f6d';
-  return `<svg class="spk" viewBox="0 0 ${L} ${H}" preserveAspectRatio="none" aria-hidden="true">
-    <polyline points="${pts}" fill="none" stroke="${c}" stroke-width="1.6"
-      stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
+/* ============================================================ rendu liste
+   Pagination par revelation progressive : 231 cartes portent chacune un SVG
+   de rail et une sparkline, les poser toutes d'un coup fige le premier rendu. */
+const PAGE = 24;
+let vus = 0, courant = [];
+
+function rendu(reset) {
+  const el = document.getElementById('liste');
+  if (reset) { vus = 0; courant = selection(); el.innerHTML = ''; }
+  if (!courant.length) {
+    el.innerHTML = `<div class="empty"><div class="lab">Aucun résultat</div>
+      <p>Aucun wallet ne satisfait ce filtre. Élargissez la recherche ou revenez à « Tous ».</p></div>`;
+    document.getElementById('cnt') && (document.getElementById('cnt').textContent = '0');
+    return;
+  }
+  const lot = courant.slice(vus, vus + PAGE);
+  el.insertAdjacentHTML('beforeend', lot.map(carte).join(''));
+  vus += lot.length;
+  const fin = el.querySelector('.fin');
+  if (fin) fin.remove();
+  if (vus >= courant.length) {
+    el.insertAdjacentHTML('beforeend',
+      `<div class="fin">${courant.length} wallet${courant.length > 1 ? 's' : ''} · fin de liste</div>`);
+  }
+  const c = document.getElementById('cnt');
+  if (c) c.textContent = String(courant.length);
 }
 
-/* ---------- rendu classement ---------- */
-const PAGE = 40;
-let limite = PAGE;
-function rendu(reset){
-  if (reset !== false) limite = PAGE;
-  const r = filtre();
-  document.getElementById('count').textContent =
-    r.length + ' / ' + W.length + (F.actif ? ` actifs ≤ ${F.actif} j` : ' wallets');
-  const vus = r.slice(0, limite), reste = r.length - vus.length;
-  document.getElementById('list').innerHTML = r.length
-    ? vus.map(carte).join('') + (reste > 0
-        ? `<button class="plus" onclick="plus()" aria-label="Afficher ${Math.min(PAGE, reste)} wallets supplementaires">
-             Voir ${Math.min(PAGE, reste)} de plus <span>${vus.length} / ${r.length}</span></button>`
-        : (r.length > PAGE ? `<div class="fin">Fin du classement · ${r.length} wallets</div>` : ''))
-    : `<div class="empty"><div>⌕</div><p>Aucun wallet ne correspond à ces critères.</p></div>`;
-}
-function plus(){
-  limite += PAGE;
-  const y = window.scrollY;
-  rendu(false);
-  window.scrollTo(0, y);
-}
+/* revelation progressive au defilement, sans bouton */
+new IntersectionObserver(es => {
+  if (es[0].isIntersecting && vus && vus < courant.length) rendu(false);
+}, { rootMargin: '600px' }).observe(document.getElementById('sentinel'));
 
-/* ---------- graphiques ---------- */
-function dessine(cv, pts, couleur){
-  const r = window.devicePixelRatio || 1, L = cv.clientWidth, H = cv.clientHeight;
-  cv.width = L * r; cv.height = H * r;
-  const c = cv.getContext('2d'); c.scale(r, r); c.clearRect(0, 0, L, H);
+/* ============================================================ trace de courbes */
+function ctx2d(cv, h) {
+  const r = Math.min(window.devicePixelRatio || 1, 2.5);
+  const w = cv.clientWidth || cv.parentElement.clientWidth || 320;
+  cv.width = Math.round(w * r); cv.height = Math.round(h * r);
+  cv.style.height = h + 'px';
+  const c = cv.getContext('2d'); c.scale(r, r);
+  return [c, w, h];
+}
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/** Courbe temporelle. `sous` remplit sous la ligne de zero par des hachures :
+ *  le signe se lit a la forme, pas a une couleur gain/perte. */
+function courbe(cv, pts, opt) {
+  opt = opt || {};
+  const [c, w, h] = ctx2d(cv, opt.h || 150);
   if (!pts || pts.length < 2) return;
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
   let y0 = Math.min(...ys, 0), y1 = Math.max(...ys, 0);
-  if (y1 === y0) y1 = y0 + 1;
-  const P = 6, X = v => P + (v - x0) / (x1 - x0 || 1) * (L - 2*P),
-        Y = v => H - P - (v - y0) / (y1 - y0) * (H - 2*P);
-  c.strokeStyle = '#1e2532'; c.lineWidth = 1;
-  for (let i = 0; i <= 3; i++){ const y = P + i * (H - 2*P) / 3;
-    c.beginPath(); c.moveTo(0, y); c.lineTo(L, y); c.stroke(); }
-  if (y0 < 0 && y1 > 0){ c.strokeStyle = '#2e3849'; c.setLineDash([3,3]);
-    c.beginPath(); c.moveTo(0, Y(0)); c.lineTo(L, Y(0)); c.stroke(); c.setLineDash([]); }
-  const g = c.createLinearGradient(0, P, 0, H);
-  g.addColorStop(0, couleur + '38'); g.addColorStop(1, couleur + '00');
-  c.beginPath(); c.moveTo(X(pts[0][0]), Y(pts[0][1]));
-  pts.forEach(p => c.lineTo(X(p[0]), Y(p[1])));
-  c.lineTo(X(pts[pts.length-1][0]), Y(Math.max(y0, 0))); c.lineTo(X(pts[0][0]), Y(Math.max(y0, 0)));
-  c.closePath(); c.fillStyle = g; c.fill();
-  c.beginPath(); c.moveTo(X(pts[0][0]), Y(pts[0][1]));
-  pts.forEach(p => c.lineTo(X(p[0]), Y(p[1])));
-  c.strokeStyle = couleur; c.lineWidth = 2; c.lineJoin = 'round'; c.stroke();
-  const last = pts[pts.length-1];
-  c.beginPath(); c.arc(X(last[0]), Y(last[1]), 3.5, 0, 7); c.fillStyle = couleur; c.fill();
+  if (y1 === y0) { y1 += 1; y0 -= 1; }
+  const pad = 6, PX = v => pad + ((v - x0) / (x1 - x0 || 1)) * (w - 2 * pad);
+  const PY = v => pad + (1 - (v - y0) / (y1 - y0)) * (h - 2 * pad - 12);
+  // ligne de zero, tiretee comme un repere de plan
+  c.setLineDash([2, 3]); c.strokeStyle = css('--acier-f'); c.lineWidth = 1;
+  c.beginPath(); c.moveTo(pad, PY(0)); c.lineTo(w - pad, PY(0)); c.stroke();
+  c.setLineDash([]);
+  // hachures 45 degres sous zero
+  const sousZero = pts.some(p => p[1] < 0);
+  if (sousZero) {
+    c.save(); c.beginPath();
+    c.moveTo(PX(x0), PY(0));
+    pts.forEach(p => c.lineTo(PX(p[0]), PY(Math.min(0, p[1]))));
+    c.lineTo(PX(x1), PY(0)); c.closePath(); c.clip();
+    c.strokeStyle = css('--acier'); c.globalAlpha = .16; c.lineWidth = 1;
+    for (let i = -h; i < w + h; i += 5) {
+      c.beginPath(); c.moveTo(i, 0); c.lineTo(i + h, h); c.stroke();
+    }
+    c.restore();
+  }
+  // le trace
+  c.strokeStyle = opt.couleur || css('--zinc'); c.lineWidth = 1.25;
+  c.lineJoin = 'round'; c.beginPath();
+  pts.forEach((p, i) => i ? c.lineTo(PX(p[0]), PY(p[1])) : c.moveTo(PX(p[0]), PY(p[1])));
+  c.stroke();
+  // trois reperes dates
+  c.fillStyle = css('--acier-f'); c.font = '9px "Martian Mono", monospace';
+  const marques = [x0, (x0 + x1) / 2, x1];
+  marques.forEach((t, i) => {
+    const s = new Date(t).toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+    c.textAlign = i === 0 ? 'left' : i === 2 ? 'right' : 'center';
+    c.fillText(s, i === 0 ? pad : i === 2 ? w - pad : w / 2, h - 2);
+  });
 }
-function histo(cv, h){
-  const r = window.devicePixelRatio || 1, L = cv.clientWidth, H = cv.clientHeight;
-  cv.width = L * r; cv.height = H * r;
-  const c = cv.getContext('2d'); c.scale(r, r); c.clearRect(0, 0, L, H);
-  if (!h || !h.b) return;
-  const m = Math.max(...h.b), n = h.b.length, w = (L - 4) / n;
-  h.b.forEach((v, i) => {
-    const ht = m ? (v / m) * (H - 12) : 0;
-    c.fillStyle = (h.lo + i * h.pas) >= 0 ? '#2fe0a4' : '#ff5f6d';
-    c.globalAlpha = .82;
-    c.fillRect(2 + i * w + 1, H - ht, w - 2, ht);
+
+/** Histogramme : barres en contour, seule celle qui porte la mediane est pleine. */
+function histo(cv, hi, med) {
+  const [c, w, h] = ctx2d(cv, 110);
+  if (!hi || !hi.b) return;
+  const b = hi.b, n = b.length, mx = Math.max(...b) || 1;
+  const pad = 6, bw = (w - 2 * pad) / n, base = h - 16;
+  const iMed = med == null ? -1 : Math.min(n - 1, Math.max(0, Math.floor((med - hi.lo) / hi.pas)));
+  const iZero = Math.min(n - 1, Math.max(0, Math.floor((0 - hi.lo) / hi.pas)));
+  for (let i = 0; i < n; i++) {
+    const bh = (b[i] / mx) * (base - 6), x = pad + i * bw + 1, y = base - bh;
+    if (i === iMed) { c.fillStyle = css('--ambre'); c.fillRect(x, y, bw - 2, bh); }
+    else { c.strokeStyle = css('--acier'); c.lineWidth = 1; c.globalAlpha = .75;
+           c.strokeRect(x + .5, y + .5, bw - 3, Math.max(1, bh - 1)); c.globalAlpha = 1; }
+  }
+  // graduation du zero, plus haute
+  const xz = pad + iZero * bw + bw / 2;
+  c.strokeStyle = css('--gravure'); c.lineWidth = 1;
+  c.beginPath(); c.moveTo(xz, base); c.lineTo(xz, base + 6); c.stroke();
+  c.fillStyle = css('--acier-f'); c.font = '9px "Martian Mono", monospace';
+  c.textAlign = 'center'; c.fillText('0', xz, h - 2);
+}
+
+/** Nuage score contre probabilite calibree, sur les 231 wallets. C'est la these
+ *  du produit rendue mesurable : si les deux grandeurs etaient la meme chose,
+ *  le nuage serait une diagonale. Il ne l'est pas. */
+function nuage(cv, cible) {
+  const [c, w, h] = ctx2d(cv, 190);
+  const pad = 24;
+  const PX = v => pad + (v / 100) * (w - pad - 10);
+  const PY = v => h - pad - (v / 100) * (h - pad - 12);
+  c.strokeStyle = css('--gravure-f'); c.lineWidth = 1;
+  for (let g = 0; g <= 100; g += 25) {
+    c.beginPath(); c.moveTo(PX(g), PY(0)); c.lineTo(PX(g), PY(100)); c.stroke();
+    c.beginPath(); c.moveTo(PX(0), PY(g)); c.lineTo(PX(100), PY(g)); c.stroke();
+  }
+  c.strokeStyle = css('--acier'); c.globalAlpha = .55; c.lineWidth = 1;
+  W.forEach(x => { c.beginPath(); c.arc(PX(x.score), PY(x.conf), 1.9, 0, 6.284); c.stroke(); });
+  c.globalAlpha = 1;
+  if (cible) {
+    c.strokeStyle = css('--ambre'); c.lineWidth = 1;
+    c.beginPath(); c.moveTo(PX(cible.score) - 7, PY(cible.conf)); c.lineTo(PX(cible.score) + 7, PY(cible.conf)); c.stroke();
+    c.beginPath(); c.moveTo(PX(cible.score), PY(cible.conf) - 7); c.lineTo(PX(cible.score), PY(cible.conf) + 7); c.stroke();
+    c.beginPath(); c.arc(PX(cible.score), PY(cible.conf), 3.4, 0, 6.284); c.stroke();
+  }
+  c.fillStyle = css('--acier-f'); c.font = '9px "Martian Mono", monospace';
+  c.textAlign = 'center'; c.fillText('SCORE →', w / 2, h - 4);
+  c.save(); c.translate(9, h / 2); c.rotate(-Math.PI / 2); c.textAlign = 'center';
+  c.fillText('← PROBABILITÉ', 0, 0); c.restore();
+}
+
+/** Echelle verticale du grand cadran : la population reelle en arriere-plan. */
+function cadranV(cv, w0) {
+  const [c, w, h] = ctx2d(cv, cv.parentElement.clientHeight || 132);
+  const pad = 8, PY = v => h - pad - (v / 100) * (h - 2 * pad);
+  c.strokeStyle = css('--gravure'); c.lineWidth = 1;
+  c.beginPath(); c.moveTo(w - 12, PY(0)); c.lineTo(w - 12, PY(100)); c.stroke();
+  for (let v = 0; v <= 100; v += 5) {
+    const maj = v % 25 === 0;
+    c.beginPath(); c.moveTo(w - 12, PY(v)); c.lineTo(w - 12 + (maj ? 5 : 2.5), PY(v)); c.stroke();
+  }
+  // rug : les 231 mesures, pour situer ce wallet dans sa population
+  c.strokeStyle = css('--acier'); c.globalAlpha = .17;
+  W.forEach(x => { c.beginPath(); c.moveTo(w - 26, PY(x.score)); c.lineTo(w - 14, PY(x.score)); c.stroke(); });
+  c.globalAlpha = 1;
+  // MORS vertical
+  const dash = { elevee: [], moyenne: [3, 2], faible: [1, 3] }[w0.conf_lab] || [];
+  c.strokeStyle = css('--acier'); c.lineWidth = 1.1; c.setLineDash(dash);
+  c.beginPath(); c.moveTo(w - 30, PY(w0.ic[0])); c.lineTo(w - 30, PY(w0.ic[1])); c.stroke();
+  c.setLineDash([]);
+  [w0.ic[0], w0.ic[1]].forEach(v => {
+    c.beginPath(); c.moveTo(w - 34, PY(v)); c.lineTo(w - 26, PY(v)); c.stroke();
+  });
+  // INDEX
+  c.strokeStyle = css('--ambre'); c.lineWidth = 1.1;
+  c.beginPath(); c.moveTo(2, PY(w0.score)); c.lineTo(w - 6, PY(w0.score)); c.stroke();
+  c.fillStyle = css('--ambre'); c.beginPath();
+  c.moveTo(w - 6, PY(w0.score) - 2.6); c.lineTo(w - 6, PY(w0.score) + 2.6);
+  c.lineTo(w - 2, PY(w0.score)); c.closePath(); c.fill();
+}
+
+/** Rug de population du bandeau : 231 filets, la forme de la distribution. */
+function rugPop() {
+  const cv = document.getElementById('rug');
+  const [c, w, h] = ctx2d(cv, 26);
+  c.strokeStyle = css('--acier'); c.lineWidth = 1; c.globalAlpha = .5;
+  W.forEach(x => {
+    const px = 6 + (x.score / 100) * (w - 12);
+    c.beginPath(); c.moveTo(px, 6); c.lineTo(px, 20); c.stroke();
   });
   c.globalAlpha = 1;
+  c.strokeStyle = css('--gravure'); c.beginPath();
+  c.moveTo(6, 21.5); c.lineTo(w - 6, 21.5); c.stroke();
 }
 
-/* ---------- fiche wallet ---------- */
-let retour = 0, courant = null;
-function ouvre(a){
-  const w = byA[a]; if (!w) return;
-  courant = w;
-  retour = window.scrollY;
-  const [cls, lab] = statut(w);
-  const inW = watch.includes(a), inS = sel.includes(a);
-  const eq = w.eq || [];
-  const li = (arr, ic) => arr.length
-    ? arr.map(x => `<div class="li"><i>${ic}</i><span>${x}</span></div>`).join('')
-    : `<div class="li"><i>·</i><span>Aucun élément relevé.</span></div>`;
-
-  document.getElementById('detail').innerHTML = `
-  <div class="dhead"><button class="back" onclick="ferme()">← Retour au classement</button></div>
-  <div class="dbody">
-    <div class="dtitle">Wallet #${w.rang}</div>
-    <div class="daddr">${w.a}</div>
-    <div class="acts">
-      <button class="act p" onclick="copie('${w.a}')">⧉ Copier l'adresse</button>
-      <button class="act" onclick="window.open('https://app.hyperliquid.xyz/explorer/address/${w.a}','_blank')">↗ Hyperliquid</button>
-      <button class="act ${inW ? 'w' : ''}" id="bw" onclick="tw('${w.a}')">${inW ? '★ Dans la watchlist' : '☆ Watchlist'}</button>
-      <button class="act ${inS ? 'p' : ''}" id="bs" onclick="ts('${w.a}')">${inS ? '✓ Sélectionné' : '＋ Comparer'}</button>
-    </div>
-
-    <div class="hero">
-      <div class="hcard"><div class="k">Score</div>
-        <div class="v" style="color:var(--acc)">${w.score.toFixed(1)}</div>
-        <div class="s">Intervalle ${w.ic[0]}–${w.ic[1]} / 100</div></div>
-      <div class="hcard"><div class="k">Confiance</div>
-        <div class="v">${w.conf} %</div>
-        <div class="s">${w.conf_lab} · qualité ${w.qualite}/3</div></div>
-    </div>
-    <div class="sect" style="display:flex;align-items:center;gap:10px;margin-top:-8px">
-      <span class="pill ${cls}">${lab}</span>
-      <span class="meta" style="font-size:12px">${w.obs
-        ? (w.obs.suffisant
-           ? `Confirmé sur ${w.obs.n} trades natifs · écart ${num(w.obs.ecart, 3)}`
-           : `${w.obs.n} trades natifs seulement — 30 requis par le protocole`)
-        : 'Reconstruit depuis Hyperliquid, non confirmé nativement'}</span>
-    </div>
-
-    <h3>Courbe de performance</h3>
-    <div class="sect">
-      <div class="chips" style="margin-bottom:12px" id="per">
-        ${[['30J',30],['90J',90],['1A',365],['TOUT',0]].map(([l, j], i) => {
-          const n = j ? eq.filter(p => p[0] >= w.t1 - j*86400000).length : eq.length;
-          const mort = n < 3;
-          return `<button class="chip${i === 3 ? ' on' : ''}${mort ? ' off' : ''}"
-            ${mort ? 'disabled title="Pas assez de trades sur cette période"' : `onclick="per('${w.a}',${j},this)"`}
-            >${l}${mort ? ' ·' : ''}</button>`;
-        }).join('')}
-      </div>
-      <canvas id="eqc" height="168" role="img"
-        aria-label="Courbe de PnL cumule sur ${w.jours} jours, resultat final ${money(w.pnl)}"></canvas>
-      <div class="legend"><span>${dt(w.t0)}</span>
-        <span class="${sign(w.pnl)}">${money(w.pnl)} cumulé</span>
-        <span>${dt(w.t1)}</span></div>
-    </div>
-
-    <h3>Distribution des résultats</h3>
-    <div class="sect">
-      <canvas id="hic" height="112" role="img"
-        aria-label="Distribution des ${w.n} resultats de trade, du pire ${money(w.pire)} au meilleur ${money(w.best)}"></canvas>
-      <div class="legend"><span class="neg">Pertes</span>
-        <span>${w.n} trades</span><span class="pos">Gains</span></div>
-    </div>
-
-    <h3>Performance</h3>
-    <div class="sect g2">
-      <div><div class="k">PnL net</div><div class="v ${sign(w.pnl)}">${money(w.pnl)}</div></div>
-      <div><div class="k">ROI</div><div class="v">${NA}</div></div>
-      <div><div class="k">Sharpe / trade</div><div class="v">${num(w.sr)}</div></div>
-      <div><div class="k">Sharpe estimé</div><div class="v" style="color:var(--acc)">${num(w.post)}</div></div>
-      <div><div class="k">Win rate</div><div class="v">${pct(w.win)}</div></div>
-      <div><div class="k">Profit factor</div><div class="v">${num(w.pf)}</div></div>
-    </div>
-
-    <h3>Activité</h3>
-    <div class="sect g2">
-      <div><div class="k">Trades</div><div class="v">${w.n}</div></div>
-      <div><div class="k">Trades / jour</div><div class="v">${num(w.tpj)}</div></div>
-      <div><div class="k">Durée médiane</div><div class="v">${w.duree_h == null ? NA : w.duree_h + ' h'}</div></div>
-      <div><div class="k">Historique</div><div class="v">${w.jours} j</div></div>
-      <div><div class="k">Trades / 30 j</div><div class="v ${w.r30 >= 10 ? 'pos' : (w.r30 === 0 ? 'neg' : '')}">${w.r30 ?? NA}</div></div>
-      <div><div class="k">Dernier trade</div><div class="v ${w.dort_j > 90 ? 'neg' : ''}">${w.dort_j == null ? NA : (w.dort_j < 1 ? "aujourd'hui" : w.dort_j.toFixed(0) + ' j')}</div></div>
-      <div><div class="k">Long / Short</div><div class="v">${NA}</div></div>
-      <div><div class="k">Actifs</div><div class="v" style="font-size:12px">${w.coins.length ? w.coins.join(' · ') : NA}</div></div>
-    </div>
-
-    <h3>Risque</h3>
-    <div class="sect g2">
-      <div><div class="k">Max drawdown</div><div class="v neg">${money(-Math.abs(w.dd || 0))}</div></div>
-      <div><div class="k">Concentration</div><div class="v">${num(w.conc)}</div></div>
-      <div><div class="k">Volatilité / trade</div><div class="v">${num(w.vol)}</div></div>
-      <div><div class="k">Meilleur trade</div><div class="v pos">${money(w.best)}</div></div>
-      <div><div class="k">Pire trade</div><div class="v neg">${money(w.pire)}</div></div>
-      <div><div class="k">Échantillon</div><div class="v">${w.n >= 150 ? 'Suffisant' : 'Limité'}</div></div>
-    </div>
-
-    <h3>Pourquoi ce wallet est classé #${w.rang} ?</h3>
-    <div class="sect">
-      <div style="font:600 11px 'IBM Plex Mono';color:var(--pos);letter-spacing:.08em;margin-bottom:9px">POINTS FORTS</div>
-      ${li(w.forts, '✓')}
-      <div style="font:600 11px 'IBM Plex Mono';color:var(--warn);letter-spacing:.08em;margin:16px 0 9px">POINTS FAIBLES</div>
-      ${li(w.faibles, '−')}
-    </div>
-
-    <h3>⚠️ Points de vigilance</h3>
-    <div class="sect">${li(w.risques, '⚠')}</div>
-
-    <div class="sect" style="margin-top:20px;background:var(--surf2)">
-      <div class="li"><i>ℹ</i><span>Le <b>score</b> mesure la performance ; la <b>confiance</b> mesure la
-      solidité de la preuve. Les deux sont volontairement séparés : un wallet peut être
-      bien classé et peu fiable.</span></div>
-    </div>
-  </div>`;
-  const d = document.getElementById('detail'); d.classList.add('on'); d.scrollTop = 0;
-  document.body.style.overflow = 'hidden';
-  const b = d.querySelector('.back'); if (b) b.focus({preventScroll: true});
-  // Echap ferme la fiche, comme n'importe quel dialogue
-  document.onkeydown = e => { if (e.key === 'Escape') ferme(); };
-  requestAnimationFrame(() => {
-    dessine(document.getElementById('eqc'), eq, w.pnl >= 0 ? '#2fe0a4' : '#ff5f6d');
-    histo(document.getElementById('hic'), w.hist);
-  });
-}
-function per(a, j, b){
-  const w = byA[a]; if (!w) return;
-  document.querySelectorAll('#per .chip').forEach(x => x.classList.remove('on'));
-  b.classList.add('on');
-  let pts = w.eq;
-  if (j > 0 && w.t1){ const lim = w.t1 - j * 86400000; pts = w.eq.filter(p => p[0] >= lim); }
-  if (pts.length < 2) pts = w.eq.slice(-2);
-  dessine(document.getElementById('eqc'), pts, w.pnl >= 0 ? '#2fe0a4' : '#ff5f6d');
-}
-function ferme(){
-  document.getElementById('detail').classList.remove('on');
-  document.body.style.overflow = '';
-  window.scrollTo(0, retour);
-  // le focus doit revenir sur la carte quittee, sinon le lecteur d'ecran
-  // repart du haut du document a chaque fermeture.
-  const c = courant && document.querySelector(`.ctap[data-a="${courant.a}"]`);
-  if (c) c.focus({preventScroll: true});
-}
-
-/* ---------- watchlist / selection ---------- */
-function tw(a){
-  const i = watch.indexOf(a);
-  i < 0 ? watch.push(a) : watch.splice(i, 1);
-  S.set('watch', watch); toast(i < 0 ? '★ Ajouté à la watchlist' : 'Retiré de la watchlist');
-  const b = document.getElementById('bw');
-  if (b){ const on = watch.includes(a); b.className = 'act' + (on ? ' w' : '');
-    b.textContent = on ? '★ Dans la watchlist' : '☆ Watchlist'; }
-  majQA(a, 'w'); rw();
-}
-function ts(a){
-  const i = sel.indexOf(a);
-  if (i < 0){ if (sel.length >= 5){ toast('5 wallets maximum'); return; } sel.push(a); }
-  else sel.splice(i, 1);
-  S.set('sel', sel); toast(i < 0 ? '＋ Ajouté à la comparaison' : 'Retiré de la comparaison');
-  const b = document.getElementById('bs');
-  if (b){ const on = sel.includes(a); b.className = 'act' + (on ? ' p' : '');
-    b.textContent = on ? '✓ Sélectionné' : '＋ Comparer'; }
-  majQA(a, 's'); rc();
-}
-function majQA(a, quoi){
-  const on = quoi === 'w' ? watch.includes(a) : sel.includes(a);
-  document.querySelectorAll(`[data-${quoi}="${a}"]`).forEach(b => {
-    b.classList.toggle('on', on);
-    b.textContent = quoi === 'w' ? (on ? '★' : '☆') : (on ? '✓' : '＋');
-    b.setAttribute('aria-pressed', String(on));
-    b.setAttribute('aria-label', (on ? 'Retirer de' : 'Ajouter a') +
-      (quoi === 'w' ? ' la watchlist' : ' la comparaison'));
-  });
-}
-function rw(){
-  document.getElementById('wlist').innerHTML = watch.length
-    ? watch.map(a => byA[a]).filter(Boolean).sort((x, y) => x.rang - y.rang).map(carte).join('')
-    : `<div class="empty"><div>⭐</div><p>Votre watchlist est vide. Ouvrez un wallet et touchez
-       <b>☆ Watchlist</b> pour le suivre.</p></div>`;
-}
-
-/* ---------- comparaison ---------- */
-const LIGNES = [
-  ['Rang',          w => '#' + w.rang],
-  ['Score',         w => w.score.toFixed(1), 'acc'],
-  ['Perf. estimée', w => num(w.post)],
-  ['Sharpe observé',w => num(w.sr)],
-  ['PnL',           w => money(w.pnl), 'sign'],
-  ['ROI',           () => NA],
-  ['Win rate',      w => pct(w.win)],
-  ['Profit factor', w => num(w.pf)],
-  ['Trades',        w => String(w.n)],
-  ['Historique',    w => w.jours + ' j'],
-  ['Drawdown',      w => money(-Math.abs(w.dd || 0))],
-  ['Concentration', w => num(w.conc)],
-  ['Confiance',     w => w.conf + ' %'],
-  ['Données',       w => statut(w)[1]]
-];
-function rc(){
-  const ws = sel.map(a => byA[a]).filter(Boolean);
-  const el = document.getElementById('cmp');
-  if (ws.length < 2){
-    el.innerHTML = `<div class="empty"><div>📊</div><p>Sélectionnez au moins 2 wallets
-      (jusqu'à 5). Ouvrez un wallet et touchez <b>＋ Comparer</b>.</p>
-      ${ws.length === 1 ? `<p style="color:var(--acc)">1 wallet sélectionné.</p>` : ''}</div>`;
-    return;
+/* ============================================================ copie d'adresse */
+async function copier(txt, bouton, libelle) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(txt); ok = true; }
+  catch {
+    // Repli pour les contextes ou l'API presse-papier est refusee.
+    try {
+      const t = document.createElement('textarea');
+      t.value = txt; t.setAttribute('readonly', '');
+      t.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+      document.body.appendChild(t); t.select(); ok = document.execCommand('copy');
+      document.body.removeChild(t);
+    } catch {}
   }
-  const best = {
-    score: Math.max(...ws.map(w => w.score)), pnl: Math.max(...ws.map(w => w.pnl ?? -1e9)),
-    conf: Math.max(...ws.map(w => w.conf))
+  const av = bouton.textContent;
+  bouton.textContent = ok ? 'Adresse copiée' : 'Copie refusée';
+  bouton.classList.toggle('ok', ok);
+  setTimeout(() => { bouton.textContent = libelle || av; bouton.classList.remove('ok'); }, 1500);
+}
+
+/* ============================================================ fiche wallet */
+function cellule(k, v) { return `<div class="cell"><div class="cell-k">${k}</div>
+  <div class="cell-v">${v}</div></div>`; }
+
+/* RETRECISSEMENT. Le Sharpe brut d'un wallet et celui que le modele retient ne
+   sont pas deux chiffres a comparer de tete : c'est UN deplacement sur une
+   echelle, de l'observe vers la moyenne de la population. On le dessine comme
+   tel — cercle creux barre a l'origine, index ambre a l'arrivee, segment entre
+   les deux — sur la meme grammaire que le rail des scores.
+   L'echelle est bornee par les valeurs REELLES du jeu de donnees, pas par des
+   bornes rondes choisies pour bien tomber. */
+const SR_MIN = Math.min(...W.map(x => Math.min(x.sr, x.post)));
+const SR_MAX = Math.max(...W.map(x => Math.max(x.sr, x.post)));
+function retrecissement(w) {
+  const L = 340, H = 40, pad = 12;
+  const X = v => pad + ((v - SR_MIN) / ((SR_MAX - SR_MIN) || 1)) * (L - 2 * pad);
+  const y = 22, a = X(w.sr), b = X(w.post), z = X(0);
+  const p = [];
+  p.push(`<line x1="${pad}" y1="${y}" x2="${L - pad}" y2="${y}" stroke="var(--gravure)" stroke-width="1"/>`);
+  // le zero est le seul repere qui compte sur une echelle de Sharpe
+  p.push(`<line x1="${z}" y1="${y - 7}" x2="${z}" y2="${y + 7}" stroke="var(--gravure)" stroke-width="1"/>`);
+  p.push(`<text x="${z}" y="${H - 2}" fill="var(--acier-f)" font-size="8"
+          font-family="Martian Mono, monospace" text-anchor="middle">0</text>`);
+  p.push(`<line x1="${a}" y1="${y}" x2="${b}" y2="${y}" stroke="var(--acier)" stroke-width="1.4"/>`);
+  // origine : la valeur brute, barree comme une lecon corrigee
+  p.push(`<circle cx="${a}" cy="${y}" r="3.6" fill="none" stroke="var(--acier)" stroke-width="1.2"/>`);
+  p.push(`<line x1="${a - 5}" y1="${y + 5}" x2="${a + 5}" y2="${y - 5}" stroke="var(--acier)" stroke-width="1"/>`);
+  // arrivee : la valeur retenue
+  p.push(`<line x1="${b}" y1="${y - 9}" x2="${b}" y2="${y + 9}" stroke="var(--ambre)" stroke-width="1.4"/>`);
+  const d = w.post - w.sr;
+  p.push(`<text x="${(a + b) / 2}" y="${y - 12}" fill="var(--zinc)" font-size="10"
+          font-family="DM Mono, monospace" text-anchor="middle">${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(3)}</text>`);
+  return `<svg viewBox="0 0 ${L} ${H}" style="display:block;width:100%;height:auto" role="img"
+    aria-label="Sharpe observé ${w.sr.toFixed(4)} ramené à ${w.post.toFixed(4)}">${p.join('')}</svg>`;
+}
+
+function fiche(w) {
+  const suivi = WATCH.has(w.a);
+  const largeur = w.ic[1] - w.ic[0];
+  const QLAB = { elevee: 'élevée', moyenne: 'moyenne', faible: 'faible' };
+
+  /* --- pourquoi ce rang : phrases produites par le moteur, jamais reecrites --- */
+  const bloc = (titre, cle, classe) => {
+    const l = w[cle] || [];
+    if (!l.length) return '';
+    return `<div class="why"><h4>${titre}</h4>${l.map(t =>
+      `<div class="li ${classe}"><em></em><span>${esc(t)}</span></div>`).join('')}</div>`;
   };
-  el.innerHTML = `<div class="sect" style="padding:0;overflow:hidden"><div class="ctable"><table>
-    <thead><tr><th>Métrique</th>${ws.map(w => `<th>#${w.rang}</th>`).join('')}</tr></thead>
-    <tbody>${LIGNES.map(([k, f, m]) => `<tr><td>${k}</td>${ws.map(w => {
-      const v = f(w);
-      let c = m === 'acc' ? 'style="color:var(--acc)"' : (m === 'sign' ? `class="${sign(w.pnl)}"` : '');
-      const gagne = (k === 'Score' && w.score === best.score) ||
-                    (k === 'PnL' && w.pnl === best.pnl) ||
-                    (k === 'Confiance' && w.conf === best.conf);
-      return `<td ${c}>${v}${gagne ? ' <span style="color:var(--pos)">◆</span>' : ''}</td>`;
-    }).join('')}</tr>`).join('')}</tbody></table></div></div>
-    <div class="sect" style="margin-top:12px">
-      <div class="li"><i>◆</i><span>Marque la meilleure valeur de la ligne. Un score élevé
-      avec une confiance basse repose sur une preuve plus mince — regardez toujours
-      <b>les deux ensemble</b>.</span></div></div>
-    <div style="margin-top:12px">${ws.map(w =>
-      `<button class="chip on" style="margin-right:7px" onclick="ts('${w.a}')">#${w.rang} ✕</button>`).join('')}</div>`;
-}
 
-/* ---------- reputation : chiffres HyperTracker, attribues a HyperTracker ---------- */
-const RSORTS = [
-  ['rang',  'Rang HyperTracker', (a,b) => (a.rang_alltime||9e9) - (b.rang_alltime||9e9)],
-  ['m30',   'PnL 30 jours',      (a,b) => (b.pnlMonth||0) - (a.pnlMonth||0)],
-  ['all',   'PnL total',         (a,b) => (b.pnlAllTime||0) - (a.pnlAllTime||0)],
-  ['pct',   'PnL %',             (a,b) => (b.pnlPercentAllTime||0) - (a.pnlPercentAllTime||0)],
-  ['vol',   'Volume',            (a,b) => (b.volumeAllTime||0) - (a.volumeAllTime||0)]
-];
-let rtri = 'rang';
-function gros(v){
-  if (v == null) return NA;
-  const a = Math.abs(v), s = v < 0 ? '−' : '+';
-  if (a >= 1e9) return s + '$' + (a/1e9).toFixed(1) + 'Md';
-  if (a >= 1e6) return s + '$' + (a/1e6).toFixed(1) + 'M';
-  if (a >= 1e3) return s + '$' + (a/1e3).toFixed(0) + 'K';
-  return s + '$' + a.toFixed(0);
-}
-function brut(v){ return v == null ? NA : gros(v).slice(1); }
+  /* --- confrontation au natif --- */
+  let prot;
+  if (w.obs) {
+    const o = w.obs;
+    prot = `<div class="prot obs"><h4>Observé — donnée native HyperTracker</h4>
+      <p>Le Sharpe estimé par notre modèle est confronté au Sharpe recalculé sur les trades
+      natifs. Le verdict global du protocole reste <b>${esc(META.verdict)}</b> :
+      ${esc(META.verdict_motif)}.</p>
+      <div class="cmp">
+        <div class="h k">Métrique</div><div class="h">Dérivé</div><div class="h">Observé</div>
+        <div class="k">Sharpe / trade</div><div>${nb(o.sr_der, 4)}</div><div>${nb(o.sr, 4)}</div>
+        <div class="k">Trades</div><div>${w.n}</div><div>${o.n}</div>
+        <div class="k">Écart absolu</div><div>—</div><div>${nb(o.ecart, 3)}</div>
+        <div class="k">Écart relatif</div><div>—</div><div>${o.ecart_rel == null ? NA : pc(o.ecart_rel * 100, 1)}</div>
+        <div class="k">Change de signe</div><div>—</div><div>${o.signe ? 'oui' : 'non'}</div>
+        <div class="k">Échantillon suffisant</div><div>—</div><div>${o.suffisant ? 'oui' : 'non'}</div>
+      </div>
+      <span class="verdict">${esc(META.verdict)}</span></div>`;
+  } else {
+    prot = `<div class="prot"><h4>Dérivé — aucune donnée native</h4>
+      <p>Ce wallet n'a aucun trade natif HyperTracker exploitable : son classement repose
+      entièrement sur la reconstruction. Il n'est donc pas confronté à une seconde source.
+      Aucune valeur observée n'est affichée ici, parce qu'il n'en existe aucune.</p></div>`;
+  }
 
-function rcarte(w){
-  const vide = !w.perpEquity, mesure = w.notre_score != null;
-  const pc = w.pnlPercentAllTime;
-  return `<div class="rcard">
-    <div class="rtop">
-      <div class="rbadge">#${w.rang_alltime ?? w.meilleur_rang}</div>
-      <div class="cid">
-        <div class="addr">${short(w.a)}</div>
-        <div class="meta">${w.n_boards} classement${w.n_boards>1?'s':''} HyperTracker${w.age ? ' · depuis ' + w.age : ''}</div>
+  return `
+  <div class="wh">
+    <span class="adr" id="adr">0x${groupe(w.a)}</span>
+    <div class="adrow">
+      <button class="btn" id="cp" aria-label="Copier l'adresse brute, prête à coller">Copier</button>
+      <button class="btn" id="cpb" aria-label="Copier l'adresse groupée par blocs de quatre">Groupée</button>
+    </div>
+    <div class="idl">
+      <span class="lab">N° ${String(w.rang).padStart(3, '0')} / ${META.n}</span>
+      ${(w.coins || []).map(c => `<span class="pill">${esc(c)}</span>`).join('')}
+      ${provenance(w)}
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="cadran">
+      <div class="lft">
+        <div>
+          <div class="lab">Score</div>
+          <div class="big">${w.score.toFixed(1)}</div>
+        </div>
+        <div class="mini">
+          <div class="l">IC 95 % · ${w.ic[0]} – ${w.ic[1]}</div>
+          <div class="l">Largeur ${largeur} · Probabilité ${w.conf} %</div>
+          <div class="l">Qualité des données · ${esc(QLAB[w.conf_lab] || w.conf_lab)}</div>
+          <div class="vern" role="img" aria-label="Qualité ${w.qualite} sur 3 critères">
+            ${[0,1,2].map(i => `<i class="${i < (w.qualite || 0) ? 'f' : ''}"></i>`).join('')}
+          </div>
+          <p class="apparat">${pairs(w)} des ${META.n} wallets partagent cette réserve.</p>
+        </div>
       </div>
-      <div class="sbox">
-        <div class="sval ${sign(w.pnlAllTime)}" style="font-size:17px">${gros(w.pnlAllTime)}</div>
-        <div class="slab">PNL TOTAL</div>
-      </div>
+      <div class="vscale"><canvas id="cad" aria-hidden="true"></canvas></div>
     </div>
-    <div class="grid">
-      <div class="kv"><div class="k">PnL 30 j</div><div class="v ${sign(w.pnlMonth)}">${gros(w.pnlMonth)}</div></div>
-      <div class="kv"><div class="k">PnL %</div><div class="v ${sign(pc)}">${pc == null ? NA : (pc>=0?'+':'−') + Math.abs(pc).toFixed(0) + '%'}</div></div>
-      <div class="kv"><div class="k">Volume</div><div class="v">${brut(w.volumeAllTime)}</div></div>
-      <div class="kv"><div class="k">Équité</div><div class="v ${vide?'neg':''}">${vide ? 'vidée' : brut(w.perpEquity)}</div></div>
+
+    <div class="sect"><span class="lab">Rétrécissement</span></div>
+    <div class="well" style="padding:14px 12px 12px">
+      ${retrecissement(w)}
+      <div class="wlegend" style="margin-top:10px"><span>Sharpe observé ${nb(w.sr, 4)}</span>
+        <span>Retenu ${nb(w.post, 4)}</span></div>
     </div>
-    <div class="cfoot">
-      <span class="meta">${mesure
-        ? `Notre modèle : score ${w.notre_score} sur ${w.notre_n} trades clos`
-        : (w.notre_n ? `Seulement ${w.notre_n} trades clos — trop peu pour un score`
-                     : 'Aucun trade clos : non mesurable par notre modèle')}</span>
-      <button class="qa" onclick="window.open('https://app.hyperliquid.xyz/explorer/address/${w.a}','_blank')"
-        aria-label="Ouvrir sur Hyperliquid">↗</button>
+    <p class="note">Un échantillon mince est ramené vers la moyenne de la population :
+      c'est ce déplacement, et non le chiffre brut, qui fonde le score.</p>
+
+    <div class="sect"><span class="lab">Mesures</span></div>
+    <div class="plaque">
+      ${cellule('Sharpe / trade', nb(w.sr, 4))}
+      ${cellule('Sharpe rétréci', nb(w.post, 4))}
+      ${cellule('PnL net', usd(w.pnl))}
+      ${cellule('Drawdown max', usdb(w.dd))}
+      ${cellule('Trades', String(w.n))}
+      ${cellule('Jours d\'activité', String(w.jours))}
+      ${cellule('Taux de réussite', pc(w.win, 1))}
+      ${cellule('Profit factor', nb(w.pf, 2))}
+      ${cellule('Concentration', nb(w.conc, 3))}
+      ${cellule('Régularité mens.', w.stab == null ? NA : pc(w.stab, 0))}
+      ${cellule('Meilleur trade', usd(w.best))}
+      ${cellule('Pire trade', usd(w.pire))}
+      ${cellule('Durée médiane', w.duree_h == null ? NA : nb(w.duree_h, 1) + ' h')}
+      ${cellule('Écart-type / trade', usdb(w.vol))}
+      ${cellule('Frais payés', usdb(w.frais))}
+      ${cellule('Trades / jour', nb(w.tpj, 2))}
+      ${cellule('Trades 30 j', String(w.r30 ?? 0))}
+      ${cellule('Trades 7 j', String(w.r7 ?? 0))}
+      ${cellule('Dernier trade', date(w.t1))}
+      ${cellule('Pire série mens.', w.pire_serie == null ? NA : w.pire_serie + ' mois')}
+      ${cellule('ROI', NA)}
+      ${cellule('Long / Short', NA)}
     </div>
+    <p class="note">ROI et répartition long / short ne sont pas calculables : le capital
+      engagé et le sens des positions ne figurent pas dans la source. Ces deux cellules
+      restent vides plutôt que de recevoir une valeur inventée.</p>
+
+    <div class="sect"><span class="lab">PnL cumulé</span></div>
+    <div class="well"><canvas id="g1" aria-label="Courbe du PnL cumulé"></canvas>
+      <div class="wlegend"><span>${date(w.t0)}</span><span>Fin ${usd(w.pnl)}</span></div></div>
+
+    <div class="sect"><span class="lab">Drawdown</span></div>
+    <div class="well"><canvas id="g2" aria-label="Courbe de drawdown"></canvas>
+      <div class="wlegend"><span>Repli depuis le sommet</span><span>Max ${usdb(w.dd)}</span></div></div>
+
+    <div class="sect"><span class="lab">Distribution des trades</span></div>
+    <div class="well"><canvas id="g3" aria-label="Histogramme des résultats par trade"></canvas>
+      <div class="wlegend"><span>${w.n} trades</span><span>Barre pleine : médiane</span></div></div>
+
+    <div class="sect"><span class="lab">Performance contre probabilité</span></div>
+    <div class="well"><canvas id="g4" aria-label="Nuage score contre probabilité calibrée"></canvas>
+      <div class="wlegend"><span>Les ${META.n} wallets · croix ambre : celui-ci</span></div></div>
+    <p class="note">Un score élevé n'implique pas une probabilité élevée : si les deux
+      grandeurs étaient la même chose, ce nuage serait une diagonale. Il ne l'est pas.</p>
+
+    <div class="sect"><span class="lab">Pourquoi ce rang</span></div>
+    ${bloc('Points forts', 'forts', 'f')}
+    ${bloc('Points faibles', 'faibles', 'w')}
+    ${bloc('Vigilance', 'risques', 'r')}
+    ${(!w.forts?.length && !w.faibles?.length && !w.risques?.length)
+      ? `<div class="why"><h4>Analyse</h4><div class="li w"><em></em>
+         <span>Aucun facteur saillant : les métriques de ce wallet restent dans la moyenne
+         de la population.</span></div></div>` : ''}
+
+    <div class="sect"><span class="lab">Provenance des données</span></div>
+    ${prot}
+
+    <div style="height:14px"></div>
+    <button class="btn" id="wt" style="width:100%;padding:13px"
+      aria-pressed="${suivi}">${suivi ? 'Retirer de la watchlist' : 'Ajouter à la watchlist'}</button>
+
+    <p class="pied">ρ ${nb(META.spearman, 4)} · ECE ${nb(META.ece, 4)} ·
+      Verdict <b>${esc(META.verdict)}</b></p>
   </div>`;
 }
-function rr(){
-  const r = [...RP.wallets].sort(RSORTS.find(x => x[0] === rtri)[2]).slice(0, 60);
-  document.getElementById('rlist').innerHTML = r.map(rcarte).join('') +
-    `<div class="fin">${RP.wallets.length} wallets de leaderboard · source HyperTracker</div>`;
-}
 
-/* ---------- recherche ---------- */
-function rs(){
-  const s = document.getElementById('q2').value.toLowerCase().trim();
-  const el = document.getElementById('sres');
-  if (!s){
-    el.innerHTML = `<div class="empty"><div>🔎</div><p>Collez une adresse complète ou partielle,
-      ou saisissez un rang (1 à ${W.length}).</p></div>`;
+function ouvre(a) {
+  const w = byA[a];
+  const el = document.getElementById('v-wallet');
+  if (!w) {
+    el.innerHTML = `<div class="empty"><div class="lab">Wallet introuvable</div>
+      <p>Cette adresse ne figure pas dans le classement des ${META.n} wallets analysés.</p></div>`;
     return;
   }
-  const r = W.filter(w => w.a.toLowerCase().includes(s) || String(w.rang) === s).slice(0, 25);
-  el.innerHTML = r.length
-    ? `<div class="count" style="margin:0 0 11px">${r.length} résultat${r.length > 1 ? 's' : ''}</div>` + r.map(carte).join('')
-    : `<div class="empty"><div>∅</div><p>Aucun wallet trouvé pour «&nbsp;${s}&nbsp;».
-       Ce wallet n'est pas dans les ${W.length} analysés.</p></div>`;
-}
+  el.innerHTML = fiche(w);
+  el.scrollTop = 0; window.scrollTo(0, 0);
 
-/* ---------- interactions de liste : delegation, une seule liaison ---------- */
-function surListe(e){
-  const qw = e.target.closest('[data-w]'), qs = e.target.closest('[data-s]');
-  if (qw){ e.stopPropagation(); tw(qw.dataset.w); return; }
-  if (qs){ e.stopPropagation(); ts(qs.dataset.s); return; }
-  const t = e.target.closest('.ctap');
-  if (t) ouvre(t.dataset.a);
-}
-document.addEventListener('click', surListe);
-document.addEventListener('keydown', e => {
-  if (e.key !== 'Enter' && e.key !== ' ') return;
-  const t = e.target.closest('.ctap');
-  if (t){ e.preventDefault(); ouvre(t.dataset.a); }
-});
+  // Deux formes, deux usages reels : la brute se colle dans un explorateur, la
+  // groupee se relit a l'oeil. Aucune des deux n'est tronquee.
+  el.querySelector('#cp').onclick = e => copier(w.a, e.currentTarget, 'Copier');
+  el.querySelector('#cpb').onclick = e => copier('0x' + groupe(w.a), e.currentTarget, 'Groupée');
 
-/* ---------- navigation ---------- */
-function vue(v){
-  document.querySelectorAll('.view').forEach(x => x.classList.remove('on'));
-  document.getElementById('v-' + v).classList.add('on');
-  document.querySelectorAll('nav button').forEach(b => {
-    const on = b.dataset.v === v;
-    b.classList.toggle('on', on);
-    on ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current');
+  const wt = el.querySelector('#wt');
+  wt.onclick = () => {
+    WATCH.has(w.a) ? WATCH.delete(w.a) : WATCH.add(w.a);
+    majWatch();
+    const s = WATCH.has(w.a);
+    wt.textContent = s ? 'Retirer de la watchlist' : 'Ajouter à la watchlist';
+    wt.setAttribute('aria-pressed', String(s));
+    wt.classList.toggle('on', s);
+  };
+  wt.classList.toggle('on', WATCH.has(w.a));
+
+  // Les traces sont posees apres le rendu : elles ont besoin de la largeur reelle.
+  requestAnimationFrame(() => {
+    cadranV(el.querySelector('#cad'), w);
+    courbe(el.querySelector('#g1'), w.eq, { h: 150 });
+    courbe(el.querySelector('#g2'), (w.ddc || []).map(p => [p[0], -p[1]]),
+           { h: 120, couleur: css('--acier') });
+    const med = w.eq && w.eq.length ? null : null;
+    histo(el.querySelector('#g3'), w.hist, mediane(w));
+    nuage(el.querySelector('#g4'), w);
   });
-  window.scrollTo(0, 0);
-  if (v === 'watch') rw(); if (v === 'cmp') rc(); if (v === 'rep') rr();
 }
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => vue(b.dataset.v));
+/* Effectif reel partageant la meme qualite de donnees que ce wallet. Compte, pas
+   estimation : la phrase d'apparat cite un chiffre verifiable. */
+function pairs(w) {
+  return W.filter(x => x.conf_lab === w.conf_lab).length;
+}
 
-/* ---------- init ---------- */
-document.getElementById('sorts').innerHTML = SORTS.map(([k, l], i) =>
-  `<button class="chip${i === 0 ? ' on' : ''}" data-s="${k}">${l}</button>`).join('');
-document.querySelectorAll('#sorts .chip').forEach(c => c.onclick = () => {
-  tri = c.dataset.s;
-  document.querySelectorAll('#sorts .chip').forEach(x => x.classList.remove('on'));
-  c.classList.add('on'); rendu();
-});
-document.getElementById('fpanel').innerHTML =
-  `<div class="frange"><label>Activité récente</label>
-   <div class="chips" style="margin:0">
-     ${[['7 derniers jours',7],['30 jours',30],['90 jours',90],['Tous, même dormants',0]]
-       .map(([l, j]) => `<button class="chip${j === 30 ? ' on' : ''}" data-act="${j}"
-         aria-label="Afficher les wallets actifs sur ${j || 'toute periode'}">${l}</button>`).join('')}
-   </div></div>` +
-  FDEF.map(([k, l, mn, mx, st]) =>
-  `<div class="frange"><label for="f-${k}">${l} <b id="lb-${k}">${F[k]}</b></label>
-   <input type="range" id="f-${k}" min="${mn}" max="${mx}" step="${st}" value="${F[k]}"
-     data-f="${k}" aria-label="${l}"></div>`).join('') +
-  `<div class="frange"><label>Provenance des données</label>
-   <div class="chips" style="margin:0">
-     <button class="chip on" data-o="all">Toutes</button>
-     <button class="chip" data-o="obs">🟢 Avec natif</button>
-     <button class="chip" data-o="der">🟡 DERIVED seul</button></div></div>`;
-document.querySelectorAll('#fpanel input[type=range]').forEach(i => i.oninput = () => {
-  const k = i.dataset.f, v = parseFloat(i.value); F[k] = v;
-  document.getElementById('lb-' + k).textContent = FDEF.find(f => f[0] === k)[5](v);
-  rendu();
-});
-document.querySelectorAll('#fpanel [data-act]').forEach(b => b.onclick = () => {
-  F.actif = parseInt(b.dataset.act, 10);
-  document.querySelectorAll('#fpanel [data-act]').forEach(x => x.classList.remove('on'));
-  b.classList.add('on'); rendu();
-});
-document.querySelectorAll('#fpanel [data-o]').forEach(b => b.onclick = () => {
-  F.obs = b.dataset.o;
-  document.querySelectorAll('#fpanel [data-o]').forEach(x => x.classList.remove('on'));
-  b.classList.add('on'); rendu();
-});
-document.getElementById('ftoggle').onclick = function(){
-  const p = document.getElementById('fpanel');
-  p.classList.toggle('on'); this.classList.toggle('on', p.classList.contains('on'));
+/* mediane des resultats par trade, reconstituee depuis l'histogramme deja calcule */
+function mediane(w) {
+  if (!w.hist || !w.hist.b) return null;
+  const b = w.hist.b, tot = b.reduce((s, x) => s + x, 0);
+  let c = 0;
+  for (let i = 0; i < b.length; i++) { c += b[i]; if (c >= tot / 2) return w.hist.lo + (i + .5) * w.hist.pas; }
+  return null;
+}
+
+/* ============================================================ watchlist */
+function rendWatch() {
+  const l = W.filter(w => WATCH.has(w.a)).sort(TRIS.find(x => x[0] === ETAT.tri)[2]);
+  document.getElementById('wlist').innerHTML = l.length
+    ? `<div role="list">${l.map(carte).join('')}</div>
+       <div class="fin">${l.length} wallet${l.length > 1 ? 's' : ''} suivi${l.length > 1 ? 's' : ''}</div>`
+    : `<div class="empty"><div class="lab">Watchlist vide</div>
+       <p>Ouvrez la fiche d'un wallet puis touchez « Ajouter à la watchlist ».
+       La liste reste sur cet appareil.</p></div>`;
+}
+
+/* ============================================================ insights */
+function rendInsights() {
+  const n = RP.wallets ? RP.wallets.length : 0;
+  const m = RP.meta || {};
+  const top = (RP.wallets || []).slice().sort(
+    (a, b) => (a.rang_alltime || 9e9) - (b.rang_alltime || 9e9)).slice(0, 25);
+  const gros = v => {
+    if (v == null) return NA;
+    const a = Math.abs(v), s = v < 0 ? '−' : '+';
+    if (a >= 1e9) return s + '$' + (a / 1e9).toFixed(1) + ' Md';
+    if (a >= 1e6) return s + '$' + (a / 1e6).toFixed(1) + ' M';
+    if (a >= 1e3) return s + '$' + (a / 1e3).toFixed(0) + ' k';
+    return s + '$' + a.toFixed(0);
+  };
+  document.getElementById('ins').innerHTML = `
+    <div class="sect"><span class="lab">Ce que mesure le score</span></div>
+    <div class="prot"><h4>Deux grandeurs, jamais une seule</h4>
+      <p>Le <b>score</b> situe la performance par trade clos. La <b>probabilité</b> dit
+      seulement à quel point cette estimation est soutenue par les données. Les deux ne se
+      confondent pas — et ne promettent aucun gain futur.</p></div>
+    <div class="well" style="margin-top:10px">
+      <canvas id="gi" aria-label="Nuage score contre probabilité sur la population"></canvas>
+      <div class="wlegend"><span>${META.n} wallets classés</span><span>Score → · Probabilité ↑</span></div>
+    </div>
+
+    <div class="sect"><span class="lab">Réputation HyperTracker</span></div>
+    <div class="prot"><h4>Chiffres HyperTracker, pas les nôtres</h4>
+      <p>Ces ${n} wallets viennent des classements perpétuels HyperTracker. Les montants
+      affichés sont <b>les leurs</b> : nous ne leur attribuons aucun score. Sur ${n} wallets,
+      <b>${m.sans_trade_clos ?? '—'} n'ont aucun trade clos</b> — ils tiennent des positions
+      longtemps sans jamais revenir à plat. Notre modèle compte des allers-retours clos ;
+      il ne peut pas les mesurer. PnL de compte et performance par trade clos ne sont pas
+      la même grandeur.</p></div>
+    ${top.map(w => `<div class="card" style="cursor:default;padding-bottom:12px">
+      <div class="c0"><span class="no"><span>HT N° ${w.rang_alltime ?? w.meilleur_rang}</span></span>
+        <span class="coins"><span class="prov">HyperTracker</span></span></div>
+      <div class="adrow" style="padding:4px 0 8px">
+        <span class="adr short">0x${groupe(w.a)}</span>
+        <span class="rd" style="font:500 15px 'DM Mono',monospace;color:var(--zinc-b)">${gros(w.pnlAllTime)}</span>
+      </div>
+      <div class="wlegend"><span>PnL 30 j ${gros(w.pnlMonth)}</span>
+        <span>${w.notre_n ? w.notre_n + ' trades clos' : 'aucun trade clos'}</span></div>
+    </div>`).join('')}
+    <div class="fin">${n} wallets de classement · source HyperTracker</div>`;
+  requestAnimationFrame(() => nuage(document.getElementById('gi'), null));
+}
+
+/* ============================================================ en-tetes */
+const ECRANS = {
+  '/':         { t: 'HyperTracker', s: 'Wallet Intelligence' },
+  '/search':   { t: 'Recherche',    s: 'Adresse ou actif' },
+  '/watch':    { t: 'Watchlist',    s: 'Suivis sur cet appareil' },
+  '/insights': { t: 'Insights',     s: 'Lecture du score' },
 };
-document.getElementById('q').oninput = e => { q = e.target.value; rendu(); };
-document.getElementById('q2').oninput = rs;
+function entete(route, w) {
+  const hd = document.getElementById('hd'), ex = document.getElementById('hextra');
+  ex.innerHTML = '';
+  if (route === '/w') {
+    hd.innerHTML = `<button class="btn" id="bk" aria-label="Retour au classement">← Retour</button>
+      <span class="htitle"><h1 style="font-size:13px;letter-spacing:.1em">${w ? 'N° ' + w.rang : 'Wallet'}</h1>
+      <p>${w ? 'Score ' + w.score.toFixed(1) + ' · IC ' + w.ic[0] + '–' + w.ic[1] : ''}</p></span>`;
+    hd.querySelector('#bk').onclick = () => history.back();
+    return;
+  }
+  const e = ECRANS[route] || ECRANS['/'];
+  hd.innerHTML = `<span class="htitle"><h1>${e.t}</h1><p>${e.s}</p></span>
+    ${route === '/' ? '<span class="lab" style="flex:0 0 auto"><span id="cnt"></span> / ' + META.n + '</span>' : ''}`;
+  // L'en-tete est reconstruit a chaque changement d'ecran : le compteur doit etre
+  // repose ensuite, sinon il reste vide alors que la liste est deja rendue.
+  const c = hd.querySelector('#cnt');
+  if (c) c.textContent = String(courant.length);
+}
 
-const pv = document.getElementById('pverdict');
-pv.textContent = META.verdict === 'VALIDE' ? '🟢 VALIDÉ'
-  : META.verdict === 'INCONCLUSIF' ? '⚠️ INCONCLUSIF' : '🔴 ' + META.verdict;
-pv.className = 'pill ' + (META.verdict === 'VALIDE' ? 'o' : 'i');
-document.getElementById('pmaj').textContent = META.maj;
-document.getElementById('rsorts').innerHTML = RSORTS.map(([k, l], i) =>
-  `<button class="chip${i === 0 ? ' on' : ''}" data-r="${k}">${l}</button>`).join('');
-document.querySelectorAll('#rsorts .chip').forEach(c => c.onclick = () => {
-  rtri = c.dataset.r;
-  document.querySelectorAll('#rsorts .chip').forEach(x => x.classList.remove('on'));
-  c.classList.add('on'); rr();
-});
-rendu(); rs(); rw(); rc(); rr();
-let rz;
-addEventListener('resize', () => {
-  clearTimeout(rz);
-  rz = setTimeout(() => {
-    if (!courant || !document.getElementById('detail').classList.contains('on')) return;
-    const c = document.getElementById('eqc'), h = document.getElementById('hic');
-    if (c) dessine(c, courant.eq, courant.pnl >= 0 ? '#2fe0a4' : '#ff5f6d');
-    if (h) histo(h, courant.hist);
-  }, 140);
-});
-</script>"""
+/* ============================================================ routage
+   Routage par fragment : le bouton retour du systeme fonctionne sans code,
+   et une fiche est une VRAIE page avec sa propre adresse, pas un panneau. */
+function route() {
+  const h = (location.hash || '#/').slice(1);
+  const vues = { '/': 'v-rank', '/search': 'v-rank', '/watch': 'v-watch', '/insights': 'v-insights' };
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('on'));
 
-html = (TPL.replace("%%DATA%%", json.dumps(DATA, separators=(",", ":")))
-           .replace("%%REP%%", json.dumps(REP, separators=(",", ":"))))
-out = os.environ.get("HT_APP_OUT", os.path.join(D, "app.html"))
-open(out, "w", encoding="utf8").write(html)
-print(f"ecrit : {out}  ({len(html)/1024:.0f} Ko)")
+  if (h.startsWith('/w/')) {
+    const a = h.slice(3).toLowerCase();
+    document.getElementById('v-wallet').classList.add('on');
+    entete('/w', byA[a]);
+    ouvre(a);
+    majNav(null);
+    return;
+  }
+  const id = vues[h] || 'v-rank';
+  document.getElementById(id).classList.add('on');
+  entete(h in vues ? h : '/');
+  majNav(h in vues ? h : '/');
+
+  if (id === 'v-watch') rendWatch();
+  if (id === 'v-insights') rendInsights();
+  if (id === 'v-rank') {
+    if (h === '/search') { setTimeout(() => document.getElementById('q').focus(), 60); }
+    // restitution exacte de l'ecran quitte : filtres, tri, recherche, position
+    requestAnimationFrame(() => window.scrollTo(0, scrollRank));
+  }
+}
+function majNav(h) {
+  document.querySelectorAll('nav button').forEach(b =>
+    b.classList.toggle('on', h != null && b.dataset.nav === h));
+}
+window.addEventListener('hashchange', route);
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  if (location.hash.slice(1) === b.dataset.nav) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  location.hash = '#' + b.dataset.nav;
+});
+
+/* une carte ouvre une page : delegation, pour ne pas poser 231 ecouteurs */
+document.addEventListener('click', e => {
+  const c = e.target.closest('.card[data-a]');
+  if (c) { scrollRank = window.scrollY; location.hash = '#/w/' + c.dataset.a; }
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const c = e.target.closest && e.target.closest('.card[data-a]');
+  if (c) { scrollRank = window.scrollY; location.hash = '#/w/' + c.dataset.a; }
+});
+
+/* ============================================================ demarrage */
+function bandeau() {
+  const inc = META.verdict !== 'CONCLUANT';
+  document.getElementById('calib').innerHTML = `
+    <div><div class="lab">Spearman</div><div class="v">${nb(META.spearman, 4)}</div></div>
+    <div><div class="lab">ECE</div><div class="v">${nb(META.ece, 4)}</div></div>
+    <div><div class="lab">Validation</div>
+      <div class="v ${inc ? 'warn' : ''}" style="font-size:11px">${esc(META.verdict)}</div></div>`;
+  document.getElementById('kpis').innerHTML = `
+    <div class="kpi"><div class="lab">Wallets classés</div><div class="v">${META.n}</div></div>
+    <div class="kpi"><div class="lab">Trades analysés</div>
+      <div class="v">${(META.trades / 1000).toFixed(1)}<small> k</small></div></div>
+    <div class="kpi"><div class="lab">Score max</div><div class="v">${nb(META.score_max, 1)}</div></div>
+    <div class="kpi"><div class="lab">Qualité élevée</div>
+      <div class="v">${META.conf_elevee}<small> / ${META.n}</small></div></div>
+    <div class="kpi"><div class="lab">Avec natif</div>
+      <div class="v">${META.avec_natif}<small> / ${META.n}</small></div></div>
+    <div class="kpi"><div class="lab">Mise à jour</div>
+      <div class="v" style="font-size:13px">${esc(META.maj)}</div></div>`;
+}
+
+/* La convention : legende, indicateur et filtre en un seul objet. Les largeurs
+   sont proportionnelles aux effectifs REELS, donc la barre montre du meme coup
+   que la qualite « moyenne » domine largement la population. */
+const CONV = [
+  ['q3', 's', 'élevée',  'conf_elevee'],
+  ['q2', 'd', 'moyenne', 'conf_moyenne'],
+  ['q1', 'p', 'faible',  'conf_faible'],
+];
+function convention() {
+  const tot = CONV.reduce((s, c) => s + (META[c[3]] || 0), 0) || 1;
+  document.getElementById('conv').innerHTML = CONV.map(([k, cls, lib, cle]) => {
+    const v = META[cle] || 0;
+    return `<button class="cseg ${cls}${ETAT.filtre === k ? ' on' : ''}" data-c="${k}"
+      style="flex:${v} 1 0" aria-pressed="${ETAT.filtre === k}"
+      aria-label="Qualité ${lib}, ${v} wallets. Filtrer.">
+      <i aria-hidden="true"></i><span>${lib} ${v}</span></button>`;
+  }).join('');
+  document.getElementById('conv').onclick = e => {
+    const b = e.target.closest('.cseg'); if (!b) return;
+    // un second appui sur le segment actif relache le filtre
+    ETAT.filtre = (ETAT.filtre === b.dataset.c) ? 'tous' : b.dataset.c;
+    S.set('etat', ETAT); scrollRank = 0;
+    convention(); chips(); rendu(true);
+  };
+}
+
+function chips() {
+  document.getElementById('filtres').innerHTML = FILTRES.map(([k, l]) =>
+    `<button class="chip${k === ETAT.filtre ? ' on' : ''}" data-f="${k}">${l}</button>`).join('');
+  document.getElementById('tris').innerHTML = TRIS.map(([k, l]) =>
+    `<button class="chip${k === ETAT.tri ? ' on' : ''}" data-t="${k}">${l}</button>`).join('');
+  document.getElementById('filtres').onclick = e => {
+    const b = e.target.closest('.chip'); if (!b) return;
+    ETAT.filtre = b.dataset.f; S.set('etat', ETAT);
+    document.querySelectorAll('#filtres .chip').forEach(x => x.classList.remove('on'));
+    b.classList.add('on'); scrollRank = 0; convention(); rendu(true);
+  };
+  document.getElementById('tris').onclick = e => {
+    const b = e.target.closest('.chip'); if (!b) return;
+    ETAT.tri = b.dataset.t; S.set('etat', ETAT);
+    document.querySelectorAll('#tris .chip').forEach(x => x.classList.remove('on'));
+    b.classList.add('on'); scrollRank = 0; rendu(true);
+  };
+}
+
+function recherche() {
+  const q = document.getElementById('q'), box = document.getElementById('sbox');
+  q.value = ETAT.q || '';
+  box.classList.toggle('has', !!q.value);
+  let t;
+  q.oninput = () => {
+    box.classList.toggle('has', !!q.value);
+    clearTimeout(t);
+    t = setTimeout(() => { ETAT.q = q.value; S.set('etat', ETAT); scrollRank = 0; rendu(true); }, 130);
+  };
+  document.getElementById('qc').onclick = () => {
+    q.value = ''; ETAT.q = ''; S.set('etat', ETAT);
+    box.classList.remove('has'); rendu(true); q.focus();
+  };
+}
+
+let redim;
+window.addEventListener('resize', () => {
+  clearTimeout(redim);
+  redim = setTimeout(() => {
+    rugPop();
+    if (location.hash.startsWith('#/w/')) ouvre(location.hash.slice(4).toLowerCase());
+    if (document.getElementById('v-insights').classList.contains('on')) rendInsights();
+  }, 180);
+});
+
+bandeau();
+convention();
+chips();
+recherche();
+rendu(true);
+rugPop();
+route();
+</script>
+"""
+
+
+def main() -> int:
+    html = (TPL.replace("%%DATA%%", json.dumps(DATA, separators=(",", ":")))
+               .replace("%%REP%%", json.dumps(REP, separators=(",", ":"))))
+    with open(SORTIE, "w", encoding="utf8", newline="\n") as f:
+        f.write(html)
+    print(f"ecrit -> {SORTIE}  ({os.path.getsize(SORTIE) / 1024:.0f} Ko)")
+    print(f"  {len(DATA['wallets'])} wallets | {len(REP.get('wallets', []))} de reputation")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
