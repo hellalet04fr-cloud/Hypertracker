@@ -257,6 +257,23 @@ def connexion(f: Fenetre) -> duckdb.DuckDBPyConnection:
     point-in-time et deja purgee des pseudo-adresses (TWAP)."""
     _verifier_colonnes_autorisees(COLONNES_UTILES)
     con = duckdb.connect()
+
+    # Une base DuckDB EN MEMOIRE ne deverse rien sur disque tant qu'on ne lui a pas
+    # dit ou le faire : sans `temp_directory`, un plan qui depasse la memoire echoue
+    # au lieu de basculer hors-coeur. Sur la donnee reelle (61 snapshots, 16,5 M
+    # d'ordres, 30 445 adresses) les auto-jointures leave-one-out de _SQL_MEILLEUR
+    # depassaient la limite : la requete isolee levait OutOfMemoryException, et le
+    # chemin complet d'agressivite_placement faisait tomber le processus entier sur
+    # une « Windows fatal exception: access violation ». La suite de tests ne pouvait
+    # donc jamais aller au bout. Avec un repertoire de debordement, la meme requete
+    # rend 13 096 090 lignes en 124 s.
+    tmp = os.path.join(RACINE_DEFAUT, "duckdb_tmp")
+    os.makedirs(tmp, exist_ok=True)
+    con.execute("set temp_directory=?", [tmp])
+    # l'ordre des lignes n'est jamais lu : chaque resultat est agrege puis indexe par
+    # adresse. Le relacher evite de garder l'ordre d'insertion en memoire.
+    con.execute("set preserve_insertion_order=false")
+
     cols = ", ".join(COLONNES_UTILES)
     exclues = ", ".join("'" + a + "'" for a in ADRESSES_EXCLUES)
     con.execute(
