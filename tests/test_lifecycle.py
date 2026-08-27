@@ -431,3 +431,203 @@ def test_dry_run_de_collecte_ne_fait_aucune_requete(tmp_path, monkeypatch):
     b = cy.p2b_collecte(10)
     assert b["requetes"] == 0 and b["series_ajoutees"] == 0
     cy.c.close()
+
+
+# ====================================================== IDEMPOTENCE
+def test_decouverte_idempotente(base):
+    """Relancer le cycle ne recree ni ne renomme personne."""
+    assert R.enregistrer_decouverte(base, "0xab", "carnet", raison="vu au carnet")
+    assert not R.enregistrer_decouverte(base, "0xab", "leaderboard", raison="autre")
+    w = R.wallet(base, "0xab")
+    assert w["source"] == "carnet" and w["raison_decouverte"] == "vu au carnet", \
+        "la premiere decouverte est un fait, pas un champ a rafraichir"
+
+
+def test_point_historique_non_duplique_le_meme_jour(base):
+    """367 lignes « maintenu » en trois cycles pour zero changement : c'est ce que
+    ce test empeche de revenir."""
+    R.enregistrer_decouverte(base, "0xab", "carnet")
+    m = {"score": 50.0, "rang": 3}
+    assert R.enregistrer_point(base, "0xab", R.RANKED, "maintenu", m) is True
+    assert R.enregistrer_point(base, "0xab", R.RANKED, "maintenu", m) is False
+    assert R.enregistrer_point(base, "0xab", R.RANKED, "maintenu", m) is False
+    assert len(R.historique(base, "0xab")) == 1
+
+
+def test_point_historique_ecrit_sur_changement_de_rang(base):
+    R.enregistrer_decouverte(base, "0xab", "carnet")
+    R.enregistrer_point(base, "0xab", R.RANKED, "maintenu", {"score": 50.0, "rang": 3})
+    assert R.enregistrer_point(base, "0xab", R.RANKED, "maintenu",
+                               {"score": 50.0, "rang": 12}) is True
+
+
+def test_point_historique_ecrit_sur_changement_de_statut(base):
+    R.enregistrer_decouverte(base, "0xab", "carnet")
+    R.enregistrer_point(base, "0xab", R.RANKED, "maintenu", {"score": 50.0, "rang": 3})
+    assert R.enregistrer_point(base, "0xab", R.ARCHIVED, "retire",
+                               {"score": 50.0, "rang": 3}) is True
+
+
+def test_seuil_de_derive_du_score_est_declare():
+    """L'a priori etant reestime a chaque cycle, tous les scores bougent de
+    quelques dix-milliemes sans que rien n'ait change pour le wallet."""
+    assert R.EPSILON_SCORE > 0.001
+
+
+def test_point_historique_seuil_de_score(base):
+    R.enregistrer_decouverte(base, "0xab", "carnet")
+    R.enregistrer_point(base, "0xab", R.RANKED, "m", {"score": 50.0, "rang": 3})
+    assert R.enregistrer_point(base, "0xab", R.RANKED, "m",
+                               {"score": 50.0 + R.EPSILON_SCORE / 2, "rang": 3}) is False
+    assert R.enregistrer_point(base, "0xab", R.RANKED, "m",
+                               {"score": 50.0 + R.EPSILON_SCORE * 3, "rang": 3}) is True
+
+
+# ====================================================== REACTIVATION
+def test_reactivation_compte_les_retours(base):
+    R.enregistrer_decouverte(base, "0xab", "carnet")
+    R.transition(base, "0xab", R.RANKED, "qualifie")
+    R.transition(base, "0xab", R.ARCHIVED, L.RAISON_DEGRADATION)
+    R.transition(base, "0xab", R.RANKED, L.RAISON_RETOUR)
+    w = R.wallet(base, "0xab")
+    assert w["statut"] == R.RANKED and w["n_retours"] == 1
+    assert w["archive_raison"] is None, "le motif est efface, l'historique jamais"
+    assert len(R.historique(base, "0xab")) == 3
+
+
+def test_promotion_est_datee(base):
+    R.enregistrer_decouverte(base, "0xab", "carnet")
+    R.transition(base, "0xab", R.RANKED, "qualifie")
+    assert R.wallet(base, "0xab")["promu_le"] is not None
+
+
+# ====================================================== PRIORITE
+def test_priorite_deterministe_et_sans_score(base):
+    """La priorite dit QUI EXAMINER ENSUITE, jamais qui est meilleur : aucun
+    score n'entre dans l'ordre."""
+    assert "score" not in R.priorite_sql()
+    for a, st in (("0x1", R.DISCOVERY), ("0x2", R.RANKED), ("0x3", R.ARCHIVED)):
+        R.enregistrer_decouverte(base, a, "test")
+        R.transition(base, a, st, "mise en place")
+        R.marquer_sale(base, [a], True)
+    R.suivre(base, "0x3", True)
+    ordre = R.a_reevaluer(base)
+    assert ordre[0] == "0x3", "un wallet suivi passe avant tout"
+    assert ordre[1] == "0x2", "puis un wallet classe"
+    assert R.a_reevaluer(base) == ordre, "meme registre, meme ordre"
+
+
+# ====================================================== BUDGET
+def test_budget_nul_ne_lance_aucune_requete(tmp_path, monkeypatch):
+    from ht import matin as M
+    monkeypatch.setattr(M, "SERIES", str(tmp_path / "s.json"))
+    monkeypatch.setattr(R, "BASE", str(tmp_path / "reg.db"))
+    json.dump({}, open(M.SERIES, "w"))
+    cy = M.Cycle(dry_run=False)
+
+    def interdit(*a, **k):                        # pragma: no cover
+        raise AssertionError("aucune requete avec un budget nul")
+    monkeypatch.setattr("ht.screening.trier", interdit)
+    b = cy.p2b_collecte(0)
+    assert b["requetes"] == 0 and b["series_ajoutees"] == 0
+    cy.c.close()
+
+
+def test_budget_insuffisant_refuse_proprement_et_journalise(tmp_path, monkeypatch):
+    """Un budget qui s'epuise en silence est indistinguable d'une file vide."""
+    from ht import matin as M
+    monkeypatch.setattr(M, "SERIES", str(tmp_path / "s.json"))
+    monkeypatch.setattr(R, "BASE", str(tmp_path / "reg.db"))
+    json.dump({}, open(M.SERIES, "w"))
+    cy = M.Cycle(dry_run=False)
+    for i in range(5):
+        R.enregistrer_decouverte(cy.c, f"0x{i:040x}", "carnet")
+    cy.c.commit()
+
+    def interdit(*a, **k):                        # pragma: no cover
+        raise AssertionError("le budget ne permet aucun engagement")
+    monkeypatch.setattr("ht.screening.trier", interdit)
+    b = cy.p2b_collecte(3)          # 3 < COUT_MAX = 6 : aucun wallet engageable
+    assert b["requetes"] == 0
+    assert b["refuses_budget"] > 0, "le refus doit etre compte"
+    j = cy.c.execute("select * from journal where tache = 'refus_budget'").fetchall()
+    assert j and j[0]["decision"] == "refuse", "le refus doit etre journalise"
+    cy.c.close()
+
+
+def test_cycle_termine_proprement_sans_quota(tmp_path, monkeypatch):
+    """0 requete HyperTracker disponible ne doit rien empecher : le cycle n'en
+    consomme aucune."""
+    from ht import matin as M
+    from ht import quota as Q
+    monkeypatch.setattr(Q, "LEDGER", str(tmp_path / "l.db"))
+    Q.journaliser("/api/external/closed-trades", None, 429)
+    assert Q.epuise() is True
+    monkeypatch.setattr(M, "SERIES", str(tmp_path / "s.json"))
+    monkeypatch.setattr(M, "CLASSEMENT", str(tmp_path / "c.json"))
+    monkeypatch.setattr(M, "RAPPORT", str(tmp_path / "r.json"))
+    monkeypatch.setattr(R, "BASE", str(tmp_path / "reg.db"))
+    json.dump({}, open(M.SERIES, "w"))
+    cy = M.Cycle(dry_run=True)
+    cy.p1_data()
+    cy.phases["DISCOVERY"] = {"nouveaux": 0}
+    cy.p3_evaluation(); cy.p4_ranking(); cy.p5_lifecycle(); cy.p6_alerts(); cy.p7_report()
+    assert cy.rapport["data_health"]["requetes_hypertracker_utilisees"] == 0
+    assert any(e["categorie"] == "QUOTA_WARNING" for e in cy.evenements)
+    cy.c.close()
+
+
+# ====================================================== RAPPORT ENRICHI
+def _cycle_seul(tmp_path, monkeypatch):
+    from ht import matin as M
+    monkeypatch.setattr(M, "SERIES", str(tmp_path / "s.json"))
+    monkeypatch.setattr(M, "CLASSEMENT", str(tmp_path / "c.json"))
+    monkeypatch.setattr(M, "RAPPORT", str(tmp_path / "r.json"))
+    monkeypatch.setattr(R, "BASE", str(tmp_path / "reg.db"))
+    json.dump({}, open(M.SERIES, "w"))
+    return M.Cycle(dry_run=True)
+
+
+def test_rapport_distingue_decouvert_et_qualifie(tmp_path, monkeypatch):
+    """Confondre les deux laisserait croire qu'une decouverte est une recommandation."""
+    cy = _cycle_seul(tmp_path, monkeypatch)
+    cy.p1_data()
+    cy.decouverts = ["0xaa", "0xbb"]
+    cy.phases["DISCOVERY"] = {"nouveaux": 2}
+    cy.p3_evaluation(); cy.p4_ranking(); cy.p5_lifecycle(); cy.p6_alerts(); cy.p7_report()
+    r = cy.rapport
+    for cle in ("new_today", "new_ranked", "reactivated", "watch", "prochaine_action"):
+        assert cle in r, f"section « {cle} » absente"
+    assert len(r["new_today"]) == 2, "new_today compte les DECOUVERTS"
+    assert r["new_ranked"] == [], "aucun qualifie sans donnee"
+    assert r["data_health"]["budget_restant"] >= 0
+    cy.c.close()
+
+
+def test_prochaine_action_est_unique_et_deduite(tmp_path, monkeypatch):
+    cy = _cycle_seul(tmp_path, monkeypatch)
+    cy.p1_data(); cy.phases["DISCOVERY"] = {"nouveaux": 0}
+    cy.p3_evaluation(); cy.p4_ranking(); cy.p5_lifecycle(); cy.p6_alerts(); cy.p7_report()
+    a = cy.rapport["prochaine_action"]
+    assert isinstance(a, str) and a and "\n" not in a, "une seule action, en une ligne"
+    cy.c.close()
+
+
+# ====================================================== ALERTES ET MIGRATION
+def test_nouvelles_categories_existent():
+    assert A.NEW_RANKED != A.NEW_WALLET, "decouvert et qualifie sont distincts"
+    assert A.REACTIVATED and A.BUDGET_REFUS
+
+
+def test_migration_additive_preserve_les_donnees(tmp_path):
+    """Migrer ne doit jamais perdre une ligne."""
+    chemin = str(tmp_path / "r.db")
+    c = R.connexion(chemin)
+    R.enregistrer_decouverte(c, "0xab", "carnet")
+    R.transition(c, "0xab", R.RANKED, "qualifie", metriques={"score": 1.0})
+    c.commit()
+    c.close()
+    c2 = R.connexion(chemin)          # rejoue la migration
+    assert R.wallet(c2, "0xab") is not None
+    assert len(R.historique(c2, "0xab")) == 1
+    c2.close()

@@ -124,26 +124,63 @@ def maintenant() -> int:
     return int(time.time())
 
 
+# Colonnes ajoutees apres coup. La migration est ADDITIVE et IDEMPOTENTE : on
+# ajoute ce qui manque, on ne recree rien, on ne supprime jamais. Une base
+# existante garde donc son historique complet.
+_COLONNES_AJOUTEES = (
+    # OBSERVED des qu'une donnee native HyperTracker existe pour ce wallet ; sinon
+    # DERIVED. Jamais deduit d'autre chose, jamais converti.
+    ("wallets", "provenance", "text"),
+    ("wallets", "raison_decouverte", "text"),
+    ("wallets", "dernier_cycle", "text"),
+    ("wallets", "derniere_collecte", "integer"),
+    # nombre de retours ARCHIVED -> RANKED : un wallet qui fait le yoyo est une
+    # information en soi, et elle se perdrait dans le detail de l'historique.
+    ("wallets", "n_retours", "integer"),
+    ("wallets", "promu_le", "integer"),
+    ("historique", "cycle_id", "text"),
+)
+
+
+def _migrer(c: sqlite3.Connection) -> None:
+    for table, colonne, typ in _COLONNES_AJOUTEES:
+        existantes = {r[1] for r in c.execute(f"pragma table_info({table})")}
+        if colonne not in existantes:
+            c.execute(f"alter table {table} add column {colonne} {typ}")
+    c.commit()
+
+
 def connexion(chemin: str | None = None) -> sqlite3.Connection:
     c = sqlite3.connect(chemin or BASE)
     c.row_factory = sqlite3.Row
     c.execute("pragma journal_mode=WAL")     # survit a un arret brutal
     c.execute("pragma foreign_keys=ON")
     c.executescript(_SCHEMA)
+    _migrer(c)
     return c
 
 
 # --------------------------------------------------------------------- wallets
-def enregistrer_decouverte(c, adresse: str, source: str, *, ts: int | None = None) -> bool:
+def enregistrer_decouverte(c, adresse: str, source: str, *, ts: int | None = None,
+                           raison: str = "", provenance: str = "DERIVED",
+                           cycle_id: str | None = None) -> bool:
     """Insere un wallet inconnu en DISCOVERY. Retourne True s'il etait nouveau.
 
-    Un wallet deja connu n'est PAS reecrit : sa date de premiere decouverte et sa
-    provenance d'origine sont des faits, pas des champs a rafraichir.
+    Un wallet deja connu n'est PAS reecrit : sa date de premiere decouverte, sa
+    source et sa raison de decouverte sont des FAITS historiques, pas des champs
+    a rafraichir. C'est aussi ce qui rend la decouverte idempotente — relancer le
+    cycle deux fois ne recree ni ne renomme personne.
+
+    `provenance` vaut DERIVED par defaut : un wallet simplement apercu dans un
+    carnet n'a aucune donnee native. Il ne passe a OBSERVED que lorsqu'une donnee
+    native existe reellement, et jamais par deduction.
     """
     ts = ts or maintenant()
     cur = c.execute(
-        "insert or ignore into wallets (adresse, statut, source, decouvert_le, maj_le)"
-        " values (?, ?, ?, ?, ?)", (adresse.lower(), DISCOVERY, source, ts, ts))
+        "insert or ignore into wallets (adresse, statut, source, decouvert_le, maj_le,"
+        " provenance, raison_decouverte, dernier_cycle)"
+        " values (?, ?, ?, ?, ?, ?, ?, ?)",
+        (adresse.lower(), DISCOVERY, source, ts, ts, provenance, raison, cycle_id))
     return cur.rowcount > 0
 
 
@@ -166,12 +203,12 @@ def compter(c) -> dict:
 
 
 def a_reevaluer(c, limite: int | None = None) -> list[str]:
-    """Wallets marques sales, par PRIORITE : classes d'abord, puis suivis, puis
-    decouvertes recentes. Un wallet deja au classement qui se degrade doit etre
-    vu avant un candidat qui n'y est pas encore."""
-    q = ("select adresse from wallets where sale = 1 "
-         "order by case statut when 'RANKED' then 0 when 'DISCOVERY' then 2 else 3 end,"
-         " watch desc, decouvert_le desc")
+    """Wallets marques sales, dans l'ordre de PRIORITE defini plus haut.
+
+    Deterministe : meme registre, meme ordre. C'est ce qui rend un cycle
+    reproductible et un dry-run fidele a ce que fera le cycle reel.
+    """
+    q = f"select adresse from wallets where sale = 1 order by {priorite_sql()}"
     if limite:
         q += f" limit {int(limite)}"
     return [r["adresse"] for r in c.execute(q)]
@@ -197,7 +234,8 @@ def majw(c, adresse: str, **champs) -> None:
 
 
 def transition(c, adresse: str, vers: str, raison: str, *,
-               metriques: dict | None = None, ts: int | None = None) -> str:
+               metriques: dict | None = None, ts: int | None = None,
+               cycle_id: str | None = None) -> str:
     """Change l'etat d'un wallet ET inscrit la trace. Les deux vont ensemble :
     un changement d'etat sans raison enregistree est un changement qu'on ne
     saura pas expliquer demain. Retourne l'etat precedent."""
@@ -214,25 +252,95 @@ def transition(c, adresse: str, vers: str, raison: str, *,
             champs["archive_raison"] = raison
             champs["archive_le"] = ts
         elif avant == ARCHIVED:
-            # retour au classement : on efface le motif d'archivage, jamais l'historique
+            # Retour au classement : on efface le MOTIF d'archivage, jamais
+            # l'historique. Le compteur de retours, lui, s'incremente — un wallet
+            # qui entre et sort plusieurs fois raconte quelque chose que le detail
+            # de l'historique ne montre pas d'un coup d'oeil.
             champs["archive_raison"] = None
             champs["archive_le"] = None
+            champs["n_retours"] = (w["n_retours"] or 0) + 1
+        if vers == RANKED and avant != RANKED:
+            champs["promu_le"] = ts
         cols = ", ".join(f"{k} = ?" for k in champs)
         c.execute(f"update wallets set {cols} where adresse = ?",
                   (*champs.values(), adresse.lower()))
-    inscrire_historique(c, adresse, vers, raison, metriques or {}, ts=ts)
+    inscrire_historique(c, adresse, vers, raison, metriques or {}, ts=ts,
+                        cycle_id=cycle_id)
     return avant
 
 
 # ----------------------------------------------------------------- historique
 def inscrire_historique(c, adresse: str, statut: str, raison: str,
-                        m: dict, *, ts: int | None = None) -> None:
+                        m: dict, *, ts: int | None = None,
+                        cycle_id: str | None = None) -> None:
     c.execute(
         "insert into historique (ts, adresse, statut, score, rang, confiance, qualite,"
-        " n_trades, conc, dd, jours, sr, raison) values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " n_trades, conc, dd, jours, sr, raison, cycle_id)"
+        " values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (ts or maintenant(), adresse.lower(), statut, m.get("score"), m.get("rang"),
          m.get("confiance"), m.get("qualite"), m.get("n"), m.get("conc"), m.get("dd"),
-         m.get("jours"), m.get("sr"), raison))
+         m.get("jours"), m.get("sr"), raison, cycle_id))
+
+
+# Amplitude en dessous de laquelle un score n'a pas « bouge ». L'a priori etant
+# reestime a chaque cycle sur la population, tous les scores derivent de quelques
+# dix-milliemes meme quand rien n'a change pour le wallet. Sans ce seuil, chaque
+# cycle inscrirait une ligne par wallet classe.
+EPSILON_SCORE = 0.05
+
+
+def enregistrer_point(c, adresse: str, statut: str, raison: str, m: dict, *,
+                      cycle_id: str | None = None, ts: int | None = None) -> bool:
+    """Inscrit un point d'historique SEULEMENT s'il apporte une information.
+
+    L'historique doit rester lisible dans un an. Mesure sur trois cycles : 367
+    lignes « maintenu » pour zero changement, soit 195 par cycle et de l'ordre de
+    70 000 par an — de quoi noyer les quelques dizaines de transitions qui, elles,
+    comptent vraiment.
+
+    Un point est donc ecrit quand, et seulement quand :
+      - le statut a change ; ou
+      - le rang a change ; ou
+      - le score a bouge de plus de EPSILON_SCORE ; ou
+      - aucun point n'existe encore pour ce wallet aujourd'hui.
+
+    Le dernier cas garantit une photo quotidienne, donc une courbe continue, sans
+    qu'un cycle relance dans la journee n'en ajoute une seconde. Retourne True si
+    une ligne a ete ecrite.
+    """
+    ts = ts or maintenant()
+    dernier = c.execute(
+        "select ts, statut, rang, score from historique where adresse = ?"
+        " order by ts desc limit 1", (adresse.lower(),)).fetchone()
+    if dernier is not None:
+        meme_jour = (time.strftime("%Y-%m-%d", time.localtime(dernier["ts"]))
+                     == time.strftime("%Y-%m-%d", time.localtime(ts)))
+        inchange = (dernier["statut"] == statut
+                    and dernier["rang"] == m.get("rang")
+                    and dernier["score"] is not None and m.get("score") is not None
+                    and abs(dernier["score"] - m["score"]) <= EPSILON_SCORE)
+        if meme_jour and inchange:
+            return False
+    inscrire_historique(c, adresse, statut, raison, m, ts=ts, cycle_id=cycle_id)
+    return True
+
+
+# ------------------------------------------------------------------- priorite
+# Ordre d'examen, deterministe. IL NE DIT PAS QUI EST MEILLEUR : il dit qui
+# regarder ensuite. Aucun score n'y entre — sinon la file d'attente finirait par
+# selectionner la population sur la performance, ce que le criblage s'interdit.
+PRIORITES = (
+    ("wallet suivi manuellement", "watch = 1"),
+    ("classe, donc son retrait doit etre vu tot", "statut = 'RANKED'"),
+    ("jamais evalue", "evalue_le is null"),
+    ("archive, peut requalifier", "statut = 'ARCHIVED'"),
+)
+
+
+def priorite_sql() -> str:
+    """Expression d'ordre : les criteres ci-dessus, puis le plus ancien examen."""
+    cas = " ".join(f"when {cond} then {i}" for i, (_, cond) in enumerate(PRIORITES))
+    return f"case {cas} else {len(PRIORITES)} end, coalesce(evalue_le, 0), decouvert_le"
 
 
 def historique(c, adresse: str, limite: int = 200) -> list[sqlite3.Row]:

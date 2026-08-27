@@ -89,15 +89,26 @@ SOURCES = {
 }
 
 
+# Raison de decouverte, par source. Un fait, pas un jugement : etre au carnet ne
+# dit rien de la qualite du wallet, et c'est precisement l'interet — la decouverte
+# ne doit pas presélectionner sur la performance.
+RAISONS = {
+    "carnet": "ordre visible au carnet Hyperliquid",
+    "leaderboard": "present dans un classement perpetuel HyperTracker",
+}
+
+
 def decouvrir(c, *, sources: tuple[str, ...] = ("carnet", "leaderboard"),
-              limite_carnet: int | None = None, dry_run: bool = False) -> dict:
+              limite_carnet: int | None = None, dry_run: bool = False,
+              cycle_id: str | None = None) -> dict:
     """Ajoute les adresses inconnues en DISCOVERY. Retourne le bilan par source.
 
     La deduplication est double : au sein du lot, et contre le registre. Un
     wallet deja connu n'est pas retouche — ni sa provenance, ni sa date de
     premiere vue, qui sont des faits historiques.
     """
-    bilan = {"nouveaux": 0, "deja_connus": 0, "par_source": {}, "erreurs": {}}
+    bilan = {"nouveaux": 0, "deja_connus": 0, "par_source": {}, "erreurs": {},
+             "adresses": []}
     vus: set[str] = set()
     for nom in sources:
         try:
@@ -114,10 +125,13 @@ def decouvrir(c, *, sources: tuple[str, ...] = ("carnet", "leaderboard"),
             if dry_run:
                 if R.wallet(c, a) is None:
                     neufs += 1
+                    bilan["adresses"].append(a)
                 else:
                     bilan["deja_connus"] += 1
-            elif R.enregistrer_decouverte(c, a, nom):
+            elif R.enregistrer_decouverte(c, a, nom, raison=RAISONS.get(nom, nom),
+                                          cycle_id=cycle_id):
                 neufs += 1
+                bilan["adresses"].append(a)
             else:
                 bilan["deja_connus"] += 1
         bilan["par_source"][nom] = neufs

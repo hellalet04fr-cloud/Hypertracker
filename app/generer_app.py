@@ -381,6 +381,9 @@ header{
 .hl-s{flex:0 0 auto;font-size:12px;color:var(--ambre)}
 .hl-x{margin-left:auto;text-align:right;font:400 11px/1.35 "Instrument Sans",sans-serif;
       color:var(--acier-f);overflow:hidden}
+.wsuivi{display:flex;gap:10px;flex-wrap:wrap;margin:-4px 0 12px;padding:0 12px;
+  font:300 9px/1.5 "Martian Mono",monospace;letter-spacing:.08em;color:var(--acier-f)}
+.wsuivi span{white-space:nowrap}
 .jbloc{background:var(--plaque);border-radius:2px;overflow:hidden;
   border-top:1px solid var(--liseré-h);border-left:1px solid var(--liseré-h);
   border-right:1px solid var(--liseré-b);border-bottom:1px solid var(--liseré-b)}
@@ -394,7 +397,7 @@ header{
 .jl-s{flex:0 0 auto;font:500 14px/1 "DM Mono",monospace;color:var(--ambre);
       font-variant-numeric:tabular-nums}
 .jl-x{margin-left:auto;text-align:right;font:400 11px/1.35 "Instrument Sans",sans-serif;
-      color:var(--acier-f);overflow:hidden}
+      color:var(--acier-f);overflow:hidden;max-width:58%}
 .jl-x .mo{font-size:12px;color:var(--zinc)}
 .ok{color:var(--acier)}
 .ko{color:#F0B5AE}
@@ -1258,14 +1261,54 @@ function mediane(w) {
 }
 
 /* ============================================================ watchlist */
+/* La watchlist est INDEPENDANTE du classement : un wallet suivi n'est jamais
+   archive automatiquement, et son suivi ne modifie aucun score. Elle vit sur
+   l'appareil, pas sur le serveur. */
+let qWatch = '';
 function rendWatch() {
-  const l = W.filter(w => WATCH.has(w.a)).sort(TRIS.find(x => x[0] === ETAT.tri)[2]);
-  document.getElementById('wlist').innerHTML = l.length
-    ? `<div role="list">${l.map(carte).join('')}</div>
-       <div class="fin">${l.length} wallet${l.length > 1 ? 's' : ''} suivi${l.length > 1 ? 's' : ''}</div>`
-    : `<div class="empty"><div class="lab">Watchlist vide</div>
+  const q = qWatch.trim().toLowerCase();
+  let l = W.filter(w => WATCH.has(w.a));
+  if (q) l = l.filter(w => w.a.toLowerCase().includes(q)
+                        || (w.coins || []).some(c => c.toLowerCase().includes(q)));
+  l = l.sort(TRIS.find(x => x[0] === ETAT.tri)[2]);
+  const champ = `<div class="srch" id="wbox">
+      <input id="wq" type="search" inputmode="search" autocomplete="off" autocapitalize="off"
+             spellcheck="false" placeholder="Filtrer la watchlist…" value="${esc(qWatch)}"
+             aria-label="Filtrer la watchlist">
+    </div>`;
+  if (!WATCH.size) {
+    document.getElementById('wlist').innerHTML =
+      `<div class="empty"><div class="lab">Watchlist vide</div>
        <p>Ouvrez la fiche d'un wallet puis touchez « Ajouter à la watchlist ».
-       La liste reste sur cet appareil.</p></div>`;
+       La liste reste sur cet appareil, et un wallet suivi n'est jamais archivé
+       automatiquement.</p></div>`;
+    return;
+  }
+  document.getElementById('wlist').innerHTML = champ + (l.length
+    ? l.map(w => {
+        const h = (w.histo || []);
+        const dernier = h.length ? h[h.length - 1] : null;
+        const avant = h.length > 1 ? h[h.length - 2] : null;
+        const delta = (dernier && avant && dernier[2] != null && avant[2] != null)
+          ? avant[2] - dernier[2] : null;
+        return carte(w) + `<div class="wsuivi">
+          <span>${w.st ? esc(ETIQ[w.st] || w.st) : NA}</span>
+          <span>${w.coll ? 'collecté ' + date(w.coll * 1000) : 'jamais collecté'}</span>
+          <span>${delta == null ? 'aucun changement mesuré'
+                 : (delta === 0 ? 'rang stable'
+                    : (delta > 0 ? '▲ +' + delta : '▼ ' + delta) + ' depuis le dernier relevé')}</span>
+        </div>`;
+      }).join('')
+    : `<p class="note">Aucun wallet suivi ne correspond à ce filtre.</p>`)
+    + `<div class="fin">${WATCH.size} wallet${WATCH.size > 1 ? 's' : ''} suivi${WATCH.size > 1 ? 's' : ''}</div>`;
+  const wq = document.getElementById('wq');
+  if (wq) {
+    let t;
+    wq.oninput = () => { clearTimeout(t); t = setTimeout(() => {
+      qWatch = wq.value; rendWatch();
+      const f = document.getElementById('wq'); if (f) { f.focus(); f.selectionStart = f.value.length; }
+    }, 140); };
+  }
 }
 
 /* ============================================================ quotidien
@@ -1273,6 +1316,10 @@ function rendWatch() {
    rien : elle lit le rapport produit par le cycle. Sans cycle execute, elle le
    dit, au lieu d'afficher une journee vide qui aurait l'air normale. */
 const DAILY = DB.daily || null;
+const CLASSES = {
+  EXCELLENT_CANDIDATE: 'Candidat excellent', PROMISING: 'Prometteur',
+  INSUFFICIENT_DATA: 'Données insuffisantes', REJECTED: 'Non qualifié',
+};
 const ARCH = DB.archives || [];
 
 function ligneW(a, extra) {
@@ -1297,6 +1344,24 @@ function sectionJ(titre, lignes, vide) {
                    : `<p class="note">${vide}</p>`);
 }
 
+/* Etiquette COURTE ET COMPLETE, pas une phrase tronquee. Le motif detaille tient
+   en cinq lignes et ecrasait la rangee ; il reste disponible en entier sur la
+   fiche du wallet, ou il a la place d'etre lu. Ici on nomme le manque, on ne le
+   raconte pas. */
+const MANQUES = [
+  [/anciennet/i, 'ancienneté à confirmer'],
+  [/trades clos </i, 'trop peu de trades clos'],
+  [/troncature/i, 'troncature non vérifiée'],
+  [/concentration/i, 'concentration à vérifier'],
+  [/qualite de donnees/i, 'preuve encore mince'],
+];
+function courtManque(x) {
+  const base = CLASSES[x.classe] || x.classe || '';
+  const t = (x.manque && x.manque.length) ? String(x.manque[0]) : '';
+  for (const [re, lib] of MANQUES) if (re.test(t)) return base + ' · ' + lib;
+  return base;
+}
+
 function rendJour() {
   const el = document.getElementById('jour');
   if (!DAILY) {
@@ -1306,45 +1371,66 @@ function rendJour() {
     return;
   }
   const d = DAILY, h = d.data_health || {}, sy = d.system_health || {};
-  const top = (d.top20 || []).map(x => ligneW(x.a, `<span class="mo">${usd(x.pnl)}</span>`));
-  const neufs = (d.new_today || []).map(x => ligneW(x.a, `<span class="ok">${esc(x.message)}</span>`));
+
+  /* NEW TODAY et NEW RANKED ne disent PAS la meme chose, et c'est le point le
+     plus important de cet ecran. Un wallet DECOUVERT vient d'apparaitre dans un
+     carnet : on ne sait rien de lui. Un wallet QUALIFIE vient de satisfaire les
+     criteres pre-enregistres. Les melanger laisserait croire qu'une decouverte
+     est une recommandation. */
+  const decouverts = (d.new_today || []).map(x => ligneW(x.a, `<span class="ok">nouveau</span>`));
+  const qualifies = (d.new_ranked || []).map(x => ligneW(x.a, `<span class="ok">${esc(x.message)}</span>`));
+  const revenus = (d.reactivated || []).map(x => ligneW(x.a, `<span class="ok">${esc(x.message)}</span>`));
   const up = (d.top_movers || []).map(x => ligneW(x.a, `<span class="ok">▲ ${esc(x.message)}</span>`));
   const down = (d.declining || []).map(x => ligneW(x.a, `<span class="ko">▼ ${esc(x.message)}</span>`));
   const arch = (d.archived || []).map(x => ligneW(x.a, `<span class="ko">${esc(x.raison || '')}</span>`));
-  const suivis = W.filter(w => WATCH.has(w.a)).map(w => ligneW(w.a, `<span class="mo">${usd(w.pnl)}</span>`));
+  const surveiller = (d.watch || []).map(x => ligneW(x.a,
+    `<span>${esc(courtManque(x))}</span>`));
+  const top = (d.top20 || []).map(x => ligneW(x.a, `<span class="mo">${usd(x.pnl)}</span>`));
 
   el.innerHTML = `
     <div class="bandeau">
-      <div><span class="lab">Cycle</span><span class="v mo">${esc(d.cycle_id || '—')}</span></div>
+      <div><span class="lab">Dernier cycle</span><span class="v mo">${esc((d.horodatage || '').slice(0, 16).replace('T', ' '))}</span></div>
       <div><span class="lab">Mode</span><span class="v mo">${esc(d.mode || '—')}</span></div>
       <div><span class="lab">Durée</span><span class="v mo">${sy.duree_s ?? '—'} s</span></div>
     </div>
 
-    ${sectionJ('Nouveaux aujourd\u2019hui', neufs,
-      'Aucune entrée remarquable ce matin. Un wallet n\u2019est signalé que s\u2019il satisfait les ' +
-      'critères de qualification ET se place dans les vingt premiers — jamais sur son seul gain.')}
-    ${sectionJ('En hausse', up, 'Aucun mouvement de rang notable.')}
-    ${sectionJ('En baisse', down, 'Aucune chute de rang notable.')}
-    ${sectionJ('Archivés', arch,
+    ${d.prochaine_action ? `<p class="note"><b>Prochaine action :</b> ${esc(d.prochaine_action)}</p>` : ''}
+
+    ${sectionJ('Découverts ce cycle', decouverts,
+      'Aucune nouvelle adresse. Les sources locales n\u2019ont rien montré qui ne soit déjà connu.')}
+    ${sectionJ('Nouveaux qualifiés', qualifies,
+      'Aucun wallet n\u2019a franchi les critères ce cycle. Une découverte n\u2019est pas une qualification : ' +
+      'il faut 30 trades clos, 130 jours d\u2019historique et une concentration sous 0,40.')}
+    ${sectionJ('Revenus au classement', revenus,
+      'Aucun retour. Un wallet archivé revient dès qu\u2019il redémontre sa qualification.')}
+    ${sectionJ('Sorties', arch,
       'Aucun retrait. Un wallet n\u2019est retiré que sur un critère réellement réfuté, jamais ' +
       'sur une donnée simplement manquante.')}
-    ${sectionJ('Watchlist', suivis,
-      'Aucun wallet suivi. Ouvrez une fiche et touchez « Ajouter à la watchlist ».')}
+    ${sectionJ('En hausse', up, 'Aucun mouvement de position notable.')}
+    ${sectionJ('En baisse', down, 'Aucune baisse de position notable.')}
+    ${sectionJ('À surveiller', surveiller,
+      'Aucun candidat en attente. Ce sont les wallets prometteurs mais encore trop peu documentés.')}
     ${sectionJ('Top 20', top, 'Classement indisponible.')}
 
     <div class="sect"><span class="lab">Santé des données</span></div>
     <div class="plaque">
+      ${cellule('Découverts', String(h.decouverts_ce_cycle ?? '—'))}
       ${cellule('Analysés', String(h.wallets_analyses ?? '—'))}
-      ${cellule('Discovery', String(h.discovery ?? '—'))}
       ${cellule('Classés', String(h.ranked ?? '—'))}
+      ${cellule('En observation', String(h.discovery ?? '—'))}
       ${cellule('Archivés', String(h.archived ?? '—'))}
       ${cellule('Watchlist', String(h.watchlist ?? '—'))}
+      ${cellule('Séries collectées', String(h.series_locales ?? '—'))}
       ${cellule('À réévaluer', String(h.a_reevaluer ?? '—'))}
+      ${cellule('Requêtes Hyperliquid', String(h.requetes_hyperliquid_consommees ?? 0))}
+      ${cellule('Budget restant', String(h.budget_restant ?? '—'))}
+      ${cellule('Reportés faute de budget', String(h.refuses_budget ?? 0))}
       ${cellule('Requêtes HyperTracker', String(h.requetes_hypertracker_utilisees ?? 0))}
       ${cellule('Sans proba calibrée', String(h.sans_probabilite_calibree ?? 0))}
+      ${cellule('Erreurs', String((h.erreurs_collecte || []).length))}
     </div>
     ${(h.erreurs_collecte || []).length
-      ? `<p class="note ko">Erreurs de collecte : ${(h.erreurs_collecte || []).map(esc).join(' · ')}</p>`
+      ? `<p class="note ko">Erreurs : ${(h.erreurs_collecte || []).map(esc).join(' · ')}</p>`
       : `<p class="note">Aucune erreur de collecte sur ce cycle.</p>`}
 
     ${(d.blocages || []).map(b => `<div class="prot" style="margin-top:12px">
@@ -1354,10 +1440,13 @@ function rendJour() {
       <p style="margin-top:6px"><b>Demande :</b> ${esc(b.demande)}</p></div>`).join('')}
 
     <div class="sect"><span class="lab">Lecture du score</span></div>
-    <div class="prot"><h4>Deux grandeurs, jamais une seule</h4>
-      <p>Le <b>score</b> situe la performance par trade clos. La <b>probabilité</b> dit
-      seulement à quel point cette estimation est soutenue par les données. Les deux ne se
-      confondent pas — et ne promettent aucun gain futur.</p></div>
+    <div class="prot"><h4>Six grandeurs, jamais confondues</h4>
+      <p><b>Performance</b> : le score, position sur l'échelle de population.
+      <b>Probabilité</b> : à quel point l'estimation est soutenue par les données.
+      <b>Incertitude</b> : la largeur de l'intervalle de crédibilité.
+      <b>Qualité des données</b> : combien de critères sur trois sont satisfaits.
+      <b>Activité</b> : la fraîcheur, indépendante du score.
+      <b>Provenance</b> : dérivé, ou confronté à une donnée native.</p></div>
     <p class="pied">&#961; ${nb(META.spearman, 4)} · ECE ${nb(META.ece, 4)} ·
       Verdict <b>${esc(META.verdict)}</b></p>`;
 }

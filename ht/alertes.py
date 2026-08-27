@@ -18,7 +18,14 @@ from __future__ import annotations
 from . import registre as R
 from .lifecycle import EXCELLENT
 
-NEW_WALLET = "NEW_WALLET"
+# NEW_WALLET et NEW_RANKED ne disent PAS la meme chose, et les confondre serait
+# la faute la plus facile a commettre ici : un wallet DECOUVERT n'est pas un
+# wallet QUALIFIE. Le premier vient d'apparaitre dans un carnet, on ne sait rien
+# de lui ; le second vient de satisfaire les criteres pre-enregistres.
+NEW_WALLET = "NEW_WALLET"          # decouvert et remarquable des son entree
+NEW_RANKED = "NEW_RANKED"          # vient de satisfaire les criteres
+REACTIVATED = "REACTIVATED"        # ARCHIVED -> RANKED
+BUDGET_REFUS = "BUDGET_REFUS"      # tache refusee faute de budget
 RANK_UP = "RANK_UP"
 RANK_DOWN = "RANK_DOWN"
 DRAWDOWN_CHANGE = "DRAWDOWN_CHANGE"

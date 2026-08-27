@@ -250,11 +250,16 @@ def registre():
     out = dict(vide)
     try:
         for r in c.execute("select adresse, statut, classe, watch, source, decouvert_le,"
-                           " archive_raison, archive_le, score, rang from wallets"):
+                           " archive_raison, archive_le, score, rang, provenance,"
+                           " raison_decouverte, derniere_collecte, n_retours, promu_le"
+                           " from wallets"):
             out["statuts"][r["adresse"]] = {
                 "st": r["statut"], "classe": r["classe"], "watch": bool(r["watch"]),
                 "src": r["source"], "vu": r["decouvert_le"],
                 "ar": r["archive_raison"], "ad": r["archive_le"],
+                "prov": r["provenance"], "rd": r["raison_decouverte"],
+                "coll": r["derniere_collecte"], "ret": r["n_retours"],
+                "promu": r["promu_le"],
             }
             if r["statut"] == "ARCHIVED":
                 out["archives"].append({
@@ -273,7 +278,15 @@ def registre():
         c.close()
     q = os.path.join(D, "daily_report.json")
     if os.path.exists(q):
-        out["daily"] = json.load(open(q, encoding="utf8"))
+        # Lecture DEFENSIVE : un rapport ecrit par une version anterieure peut
+        # encore etre en page de code systeme. On preferera toujours afficher une
+        # application sans le rapport du jour plutot que de ne rien publier.
+        try:
+            out["daily"] = json.load(open(q, encoding="utf8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as e:
+            out["daily"] = None
+            print(f"  ATTENTION daily_report.json illisible ({type(e).__name__}) : "
+                  f"l'onglet Quotidien restera vide")
     return out
 
 
@@ -296,6 +309,13 @@ for i, w in enumerate(CL["classement"], 1):
     d["watch"] = etat.get("watch", False)
     d["src"] = etat.get("src")
     d["vu"] = etat.get("vu")
+    d["rd"] = etat.get("rd")
+    d["coll"] = etat.get("coll")
+    d["ret"] = etat.get("ret") or 0
+    d["promu"] = etat.get("promu")
+    # PROVENANCE reelle : OBSERVED seulement si une donnee native existe pour ce
+    # wallet. Jamais deduite du registre, jamais convertie.
+    d["prov"] = "OBSERVED" if d.get("obs") else "DERIVED"
     # `histo` et non `hist` : ce dernier porte deja l'histogramme des PnL, et
     # l'ecraser aurait vide silencieusement le graphique de distribution.
     d["histo"] = REG["hist"].get(w["a"], [])

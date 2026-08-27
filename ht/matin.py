@@ -30,8 +30,8 @@ from . import classement as CL
 from . import decouverte as D
 from . import quota as Q
 from . import registre as R
-from .lifecycle import (ARCHIVED, DISCOVERY, RANKED, etat_cible,
-                        qualifies_for_ranking)
+from .lifecycle import (ARCHIVED, DISCOVERY, DONNEES_INSUFFISANTES, PROMETTEUR,
+                        RANKED, etat_cible, qualifies_for_ranking)
 
 DATA = os.environ.get("HT_DATA_ROOT", r"C:\Users\maram\ht_data")
 SERIES = os.path.join(DATA, "series_wallets.json")
@@ -105,7 +105,9 @@ class Cycle:
 
     # -- PHASE 2 : DISCOVERY ------------------------------------------------
     def p2_discovery(self, limite_carnet: int | None = None) -> dict:
-        b = D.decouvrir(self.c, limite_carnet=limite_carnet, dry_run=self.dry)
+        b = D.decouvrir(self.c, limite_carnet=limite_carnet, dry_run=self.dry,
+                        cycle_id=self.id)
+        self.decouverts = b.get("adresses", [])
         for src, e in b.get("erreurs", {}).items():
             self.erreurs.append(f"decouverte/{src}: {e}")
             self.evenements.append({"categorie": A.DATA_FAILURE,
@@ -134,7 +136,7 @@ class Cycle:
         survivants paient la pagination complete.
         """
         b = {"budget": budget, "requetes": 0, "examines": 0, "series_ajoutees": 0,
-             "ecartes_triage": 0, "erreurs": 0}
+             "ecartes_triage": 0, "erreurs": 0, "refuses_budget": 0}
         if budget <= 0:
             return self.phase("COLLECTE", **b, raison="budget nul")
 
@@ -143,8 +145,12 @@ class Cycle:
         cibles = [a for a in R.a_reevaluer(self.c, None) if a not in connues][:budget]
         b["candidats"] = len(cibles)
         if self.dry:
+            COUT_MAX = 6
+            tenables = max(0, budget // COUT_MAX)
+            b["refuses_budget"] = max(0, len(cibles) - tenables)
             return self.phase("COLLECTE", **b, action="simule",
-                              requetes_estimees=len(cibles))
+                              requetes_estimees=min(budget, len(cibles) * COUT_MAX),
+                              tenables=tenables)
 
         from . import hl_public as HL
         from . import reconstruct as RC
@@ -158,6 +164,14 @@ class Cycle:
         COUT_MAX = 6
         for a in cibles:
             if b["requetes"] + COUT_MAX > budget:
+                # REFUS PROPRE, ET TRACE. Un budget qui s'epuise en silence est
+                # indistinguable d'une file d'attente vide : le rapport du matin
+                # dirait « rien a collecter » alors qu'il reste tout a faire.
+                b["refuses_budget"] = len(cibles) - b["examines"]
+                self.note("COLLECTE", "refus_budget",
+                          cout_estime=COUT_MAX, cout_reel=0, decision="refuse",
+                          raison=f"budget {budget} epuise a {b['requetes']}, "
+                                 f"{b['refuses_budget']} wallet(s) reportes")
                 break
             try:
                 sonde, fills = SC.trier(a)
@@ -177,6 +191,8 @@ class Cycle:
                              for t in rec.trades
                              if not t.tronque and not t.position_ouverte]
                 b["series_ajoutees"] += 1
+                R.majw(self.c, a, derniere_collecte=R.maintenant(),
+                       dernier_cycle=self.id)
             except Exception as e:
                 b["erreurs"] += 1
                 self.note("COLLECTE", "echec", adresse=a, erreur=f"{type(e).__name__}: {e}")
@@ -241,7 +257,7 @@ class Cycle:
 
     # -- PHASE 5 : LIFECYCLE ------------------------------------------------
     def p5_lifecycle(self) -> dict:
-        promus, archives, maintenus, restes = [], [], 0, 0
+        promus, archives, reactives, maintenus, points = [], [], [], 0, 0
         for a, w in self.nouveau.items():
             row = R.wallet(self.c, a)
             statut = row["statut"] if row else DISCOVERY
@@ -258,12 +274,13 @@ class Cycle:
                        qualite=m.get("qualite"), classe=v.classe, sale=0,
                        evalue_le=R.maintenant())
             if cible != statut:
-                (promus if cible == RANKED else archives).append(
-                    {"a": a, "avant": statut, "apres": cible, "raison": raison,
-                     "score": m.get("score"), "rang": m.get("rang"),
-                     "classe": v.classe})
+                fiche = {"a": a, "avant": statut, "apres": cible, "raison": raison,
+                         "score": m.get("score"), "rang": m.get("rang"),
+                         "classe": v.classe}
+                (promus if cible == RANKED else archives).append(fiche)
                 if not self.dry:
-                    R.transition(self.c, a, cible, raison, metriques=m)
+                    R.transition(self.c, a, cible, raison, metriques=m,
+                                 cycle_id=self.id)
                 self.note("LIFECYCLE", "transition", adresse=a, statut_avant=statut,
                           statut_apres=cible, decision=cible, raison=raison)
                 if cible == ARCHIVED:
@@ -271,10 +288,29 @@ class Cycle:
                         "categorie": A.WALLET_ARCHIVED, "adresse": a,
                         "message": f"retire du classement — {raison}",
                         "details": {"raison": raison, "dernier_score": m.get("score")}})
+                elif statut == ARCHIVED:
+                    # REACTIVATION. Distincte d'une premiere qualification : ce
+                    # wallet avait deja ete retire, et il vient de redemontrer
+                    # qu'il satisfait les criteres.
+                    reactives.append(fiche)
+                    self.evenements.append({
+                        "categorie": A.REACTIVATED, "adresse": a,
+                        "message": f"revient au classement au rang {m.get('rang')}",
+                        "details": {"rang": m.get("rang"), "score": m.get("score")}})
+                else:
+                    self.evenements.append({
+                        "categorie": A.NEW_RANKED, "adresse": a,
+                        "message": f"qualifie — {v.classe}, rang {m.get('rang')}",
+                        "details": {"rang": m.get("rang"), "score": m.get("score"),
+                                    "classe": v.classe, "n": m.get("n")}})
             else:
                 maintenus += 1
                 if not self.dry and statut == RANKED:
-                    R.inscrire_historique(self.c, a, RANKED, "maintenu", m)
+                    # Point d'historique CONDITIONNEL : voir registre.enregistrer_point.
+                    # Ecrire a chaque cycle produisait 195 lignes sans information.
+                    if R.enregistrer_point(self.c, a, RANKED, "maintenu", m,
+                                           cycle_id=self.id):
+                        points += 1
 
         # wallets connus qui ne sont PLUS dans le classement calcule : leur serie
         # ne suffit plus. Ils sont archives avec le motif adequat, jamais effaces.
@@ -287,13 +323,16 @@ class Cycle:
                              "raison": raison, "score": row["score"],
                              "rang": row["rang"], "classe": None})
             if not self.dry:
-                R.transition(self.c, a, ARCHIVED, raison)
+                R.transition(self.c, a, ARCHIVED, raison, cycle_id=self.id)
             self.evenements.append({"categorie": A.WALLET_ARCHIVED, "adresse": a,
                                     "message": f"retire du classement — {raison}"})
         if not self.dry:
             self.c.commit()
-        b = {"promus": len(promus), "archives": len(archives), "maintenus": maintenus,
-             "detail_promus": promus[:50], "detail_archives": archives[:50]}
+        b = {"promus": len(promus), "archives": len(archives),
+             "reactives": len(reactives), "maintenus": maintenus,
+             "points_historique": points,
+             "detail_promus": promus[:50], "detail_archives": archives[:50],
+             "detail_reactives": reactives[:50]}
         return self.phase("LIFECYCLE", **b)
 
     # -- PHASE 6 : ALERTS ---------------------------------------------------
@@ -333,11 +372,31 @@ class Cycle:
                      "details": e.get("details")}
                     for e in self.evenements if e["categorie"] == cat][:20]
 
+        # WATCH : les prometteurs, insuffisamment documentes. Ils ne sont ni
+        # classes ni rejetes — ce sont ceux qu'il faut regarder revenir.
+        surveiller = []
+        for a2, w2 in self.nouveau.items():
+            row2 = R.wallet(self.c, a2)
+            if row2 and row2["statut"] == RANKED:
+                continue
+            v2 = qualifies_for_ranking(w2)
+            if v2.classe in (PROMETTEUR, DONNEES_INSUFFISANTES):
+                surveiller.append({"a": a2, "classe": v2.classe,
+                                   "score": round(w2["score"], 1),
+                                   "n": w2["n"], "manque": (v2.manques or v2.indetermines)[:1]})
+        surveiller.sort(key=lambda x: -x["score"])
+
         rapport = {
             "cycle_id": self.id,
             "horodatage": _horodatage(),
             "mode": "dry-run" if self.dry else "reel",
-            "new_today": mouvements(A.NEW_WALLET),
+            # NEW TODAY = wallets DECOUVERTS ce cycle. Distinct de NEW RANKED.
+            "new_today": [{"a": x, "message": "découvert ce cycle"}
+                          for x in getattr(self, "decouverts", [])[:20]],
+            "new_ranked": mouvements(A.NEW_RANKED),
+            "reactivated": mouvements(A.REACTIVATED),
+            "watch": surveiller[:20],
+            "remarquables": mouvements(A.NEW_WALLET),
             "top_movers": mouvements(A.RANK_UP),
             "declining": mouvements(A.RANK_DOWN),
             "archived": [{"a": x["a"], "raison": x["raison"],
@@ -357,6 +416,14 @@ class Cycle:
                 "erreurs_collecte": self.erreurs,
                 "quota": self.phases.get("DATA", {}).get("quota"),
                 "requetes_hypertracker_utilisees": 0,
+                "requetes_hyperliquid_consommees":
+                    self.phases.get("COLLECTE", {}).get("requetes", 0),
+                "budget_requetes": self.budget_requetes,
+                "budget_restant": max(0, self.budget_requetes
+                                      - self.phases.get("COLLECTE", {}).get("requetes", 0)),
+                "refuses_budget": self.phases.get("COLLECTE", {}).get("refuses_budget", 0),
+                "series_locales": self.phases.get("COLLECTE", {}).get("series_ajoutees", 0),
+                "decouverts_ce_cycle": self.phases.get("DISCOVERY", {}).get("nouveaux", 0),
             },
             "system_health": {
                 "phases_executees": list(self.phases),
@@ -365,13 +432,39 @@ class Cycle:
                 "derniere_synchronisation": _horodatage(),
             },
             "blocages": self._blocages(),
+            "prochaine_action": self._prochaine_action(),
         }
         if not self.dry:
-            json.dump(rapport, open(RAPPORT, "w"), ensure_ascii=False, indent=1)
+            # ENCODAGE EXPLICITE. `ensure_ascii=False` conserve les accents dans le
+            # fichier, mais `open()` sans encodage retombe sur la page de code du
+            # systeme — cp1252 sous Windows. Le rapport devenait alors illisible
+            # pour tout lecteur UTF-8, et la preparation de l'application echouait
+            # sur le premier caractere accentue.
+            with open(RAPPORT, "w", encoding="utf8") as f:
+                json.dump(rapport, f, ensure_ascii=False, indent=1)
         self.rapport = rapport
         return self.phase("REPORT", chemin=RAPPORT if not self.dry else None,
                           new_today=len(rapport["new_today"]),
+                          new_ranked=len(rapport["new_ranked"]),
+                          reactivated=len(rapport["reactivated"]),
+                          watch=len(rapport["watch"]),
                           archived=len(rapport["archived"]))
+
+    def _prochaine_action(self) -> str:
+        """Une seule, deduite de l'etat reel. Pas une liste de voeux."""
+        co = self.phases.get("COLLECTE", {})
+        if co.get("refuses_budget"):
+            return (f"{co['refuses_budget']} wallet(s) attendent une collecte : "
+                    f"relancer avec --budget plus eleve, ou attendre le cycle suivant")
+        if self.erreurs:
+            return f"traiter {len(self.erreurs)} erreur(s) de cycle"
+        if self.phases.get("RANKING", {}).get("sans_probabilite_calibree"):
+            return ("autoriser ou refuser explicitement le rejeu du recalibrage "
+                    "isotonique (voir blocages)")
+        n = R.compter(self.c)
+        if n.get("sales", 0):
+            return f"{n['sales']} wallet(s) restent a evaluer : laisser les cycles avancer"
+        return "aucune action requise"
 
     def _blocages(self) -> list[dict]:
         """Ce que le systeme ne PEUT PAS faire seul, et pourquoi. Un blocage tu
@@ -463,17 +556,21 @@ def afficher(cy: Cycle) -> None:
     print(f"  RANKING     {r.get('classes', 0):>6} classes | m={r.get('m')} tau={r.get('tau')}")
     l = p.get("LIFECYCLE", {})
     print(f"  LIFECYCLE   {l.get('promus', 0):>6} promus | {l.get('archives', 0)} archives"
-          f" | {l.get('maintenus', 0)} maintenus")
+          f" | {l.get('reactives', 0)} reactives | {l.get('maintenus', 0)} maintenus"
+          f" | {l.get('points_historique', 0)} points d'historique")
     a = p.get("ALERTS", {})
     print(f"  ALERTS      {a.get('evenements', 0):>6} evenements | "
           f"{a.get('retenues_apres_dedup', 0)} retenues | {a.get('par_categorie', {})}")
-    print(f"  REPORT      new_today={p.get('REPORT', {}).get('new_today', 0)} "
-          f"archived={p.get('REPORT', {}).get('archived', 0)}")
+    r2 = p.get("REPORT", {})
+    print(f"  REPORT      decouverts={r2.get('new_today', 0)} "
+          f"qualifies={r2.get('new_ranked', 0)} reactives={r2.get('reactivated', 0)} "
+          f"archives={r2.get('archived', 0)} a_surveiller={r2.get('watch', 0)}")
     u = p.get("UI", {})
     print(f"  UI          {u.get('action') or ('publie' if u.get('ok') else 'BLOQUE')}")
     n = R.compter(cy.c)
     print(f"\n  wallets : DISCOVERY {n.get(DISCOVERY, 0)} | RANKED {n.get(RANKED, 0)} | "
           f"ARCHIVED {n.get(ARCHIVED, 0)} | watchlist {n.get('watch', 0)}")
+    print(f"\n  prochaine action : {getattr(cy, 'rapport', {}).get('prochaine_action', '—')}")
     if cy.erreurs:
         print("\n  ERREURS :")
         for x in cy.erreurs:
