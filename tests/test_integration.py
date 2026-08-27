@@ -13,7 +13,15 @@ Deux chaines distinctes, jamais melangees :
   terrain est connue. Elle prouve que les interfaces s'emboitent et que les
   garde-fous se declenchent. Aucun de ses chiffres ne decrit un trader reel.
 """
+
 from __future__ import annotations
+
+# Cycle LOURD : ce fichier travaille sur le lac de donnees reel et depasse
+# la minute. Il est exclu du cycle rapide par pytest.ini ; lancer avec
+# `pytest -m lent` pour l'executer.
+import pytest
+pytestmark = pytest.mark.lent
+
 
 import os
 import sys

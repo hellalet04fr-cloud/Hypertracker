@@ -4,7 +4,15 @@ Tests du protocole Elite (ht/elite.py). Aucun reseau.
 Toutes les series sont des fixtures a verite connue. Aucun chiffre ici ne decrit un
 wallet reel : aucun trade clos n'a encore ete collecte.
 """
+
 from __future__ import annotations
+
+# Cycle LOURD : ce fichier travaille sur le lac de donnees reel et depasse
+# la minute. Il est exclu du cycle rapide par pytest.ini ; lancer avec
+# `pytest -m lent` pour l'executer.
+import pytest
+pytestmark = pytest.mark.lent
+
 
 import os
 import sys

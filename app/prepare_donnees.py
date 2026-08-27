@@ -63,7 +63,11 @@ def prepare(a, w):
     out = {
         "a": a, "score": round(w["score"], 1),
         "ic": [round(w["ic"][0]), round(w["ic"][1])],
-        "conf": round(w["p_cal"] * 100),
+        # La probabilite calibree peut ne PAS EXISTER : le modele isotonique
+        # ajuste n'a jamais ete persiste, donc un wallet apparu depuis la
+        # calibration n'en a pas. None se propage jusqu'a l'affichage N/D — il ne
+        # devient pas 0, qui se lirait « probabilite nulle ».
+        "conf": None if w.get("p_cal") is None else round(w["p_cal"] * 100),
         "conf_lab": w["confiance"], "qualite": w["qualite"],
         "sr": round(w["sr"], 4), "post": round(w["post"], 4),
         "n": w["n"], "jours": round(w["jours"]),
@@ -227,11 +231,74 @@ def analyser(w):
     return {"forts": forts[:5], "faibles": faibles[:4], "risques": risques[:4]}
 
 
+def registre():
+    """Etat de cycle de vie, historique et rapport du jour, s'ils existent.
+
+    L'interface doit pouvoir repondre a « pourquoi ce wallet est-il #3 aujourd'hui,
+    pourquoi etait-il #17 hier, pourquoi a-t-il ete retire ». Ces reponses ne sont
+    pas dans les series : elles sont dans le registre, qui les conserve en append
+    seul. Si le registre n'existe pas encore, l'application fonctionne sans —
+    elle n'affiche simplement aucun historique, plutot qu'un historique invente.
+    """
+    vide = {"statuts": {}, "hist": {}, "archives": [], "daily": None}
+    p = os.path.join(D, "registre.db")
+    if not os.path.exists(p):
+        return vide
+    import sqlite3
+    c = sqlite3.connect(p)
+    c.row_factory = sqlite3.Row
+    out = dict(vide)
+    try:
+        for r in c.execute("select adresse, statut, classe, watch, source, decouvert_le,"
+                           " archive_raison, archive_le, score, rang from wallets"):
+            out["statuts"][r["adresse"]] = {
+                "st": r["statut"], "classe": r["classe"], "watch": bool(r["watch"]),
+                "src": r["source"], "vu": r["decouvert_le"],
+                "ar": r["archive_raison"], "ad": r["archive_le"],
+            }
+            if r["statut"] == "ARCHIVED":
+                out["archives"].append({
+                    "a": r["adresse"], "raison": r["archive_raison"],
+                    "le": r["archive_le"], "score": r["score"], "rang": r["rang"]})
+        # historique : on ne garde que les points qui portent un rang ou un score,
+        # et au plus N_HIST_W par wallet — assez pour tracer, pas assez pour peser.
+        for r in c.execute("select adresse, ts, score, rang, statut, raison from historique"
+                           " where score is not null or rang is not null order by ts"):
+            out["hist"].setdefault(r["adresse"], []).append(
+                [r["ts"], round(r["score"], 1) if r["score"] is not None else None,
+                 r["rang"], r["statut"], (r["raison"] or "")[:120]])
+        for a, v in out["hist"].items():
+            out["hist"][a] = v[-N_HIST_W:]
+    finally:
+        c.close()
+    q = os.path.join(D, "daily_report.json")
+    if os.path.exists(q):
+        out["daily"] = json.load(open(q, encoding="utf8"))
+    return out
+
+
+N_HIST_W = 60      # points d'historique conserves par wallet
+
+REG = registre()
+
 wallets = []
 for i, w in enumerate(CL["classement"], 1):
     d = prepare(w["a"], w)
     d["rang"] = i
     d.update(analyser(d))
+    # `etat` et non `st` : ce dernier est l'alias du module statistics, et le
+    # masquer au niveau module cassait la mediane des durees plus haut.
+    etat = REG["statuts"].get(w["a"], {})
+    # Aucune valeur par defaut flatteuse : sans registre, le statut est inconnu et
+    # s'affiche comme tel, il ne devient pas « RANKED » par commodite.
+    d["st"] = etat.get("st")
+    d["classe"] = etat.get("classe")
+    d["watch"] = etat.get("watch", False)
+    d["src"] = etat.get("src")
+    d["vu"] = etat.get("vu")
+    # `histo` et non `hist` : ce dernier porte deja l'histogramme des PnL, et
+    # l'ecraser aurait vide silencieusement le graphique de distribution.
+    d["histo"] = REG["hist"].get(w["a"], [])
     wallets.append(d)
 
 meta = {
@@ -252,9 +319,18 @@ meta = {
     "conf_faible": sum(1 for w in wallets if w["conf_lab"] == "faible"),
     "score_max": max(w["score"] for w in wallets),
     "avec_natif": sum(1 for w in wallets if w.get("obs")),
+    # etat du cycle de vie, tel que le registre le connait
+    "ranked": sum(1 for w in wallets if w.get("st") == "RANKED"),
+    "discovery_total": len(REG["statuts"]) - sum(1 for v in REG["statuts"].values()
+                                                 if v["st"] != "DISCOVERY"),
+    "archives_total": len(REG["archives"]),
+    "sans_p_cal": sum(1 for w in wallets if w.get("conf") is None),
+    "registre": bool(REG["statuts"]),
 }
 out = os.path.join(D, "app_data.json")
-json.dump({"meta": meta, "wallets": wallets}, open(out, "w"), separators=(",", ":"))
+json.dump({"meta": meta, "wallets": wallets,
+           "archives": REG["archives"], "daily": REG["daily"]},
+          open(out, "w"), separators=(",", ":"))
 print(f"ecrit -> {out}  ({os.path.getsize(out)/1024:.0f} Ko)")
 print(f"  {len(wallets)} wallets | equity moyenne {st.mean(len(w['eq']) for w in wallets):.0f} points")
 print(f"  avec natifs OBSERVED : {sum(1 for w in wallets if w.get('obs'))}")

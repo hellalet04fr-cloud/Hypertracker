@@ -12,7 +12,15 @@ IDENTIQUE. Une variable honnete ne depend pas du moment ou on la calcule. Un tes
 simple monotonie laisserait passer une valeur revisee apres coup — exactement la fuite
 recherchee.
 """
+
 from __future__ import annotations
+
+# Cycle LOURD : ce fichier travaille sur le lac de donnees reel et depasse
+# la minute. Il est exclu du cycle rapide par pytest.ini ; lancer avec
+# `pytest -m lent` pour l'executer.
+import pytest
+pytestmark = pytest.mark.lent
+
 
 import os
 import sys

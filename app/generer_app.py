@@ -261,7 +261,6 @@ header{
 .qn i{width:14px;height:2px;background:var(--gravure);display:block}
 .qn i.f{background:var(--acier)}
 
-/* ============================================================ fiche wallet */
 #v-wallet{padding-bottom:8px}
 .wh{padding:12px max(16px,var(--sl)) 12px max(16px,var(--sl))}
 .adrow{display:flex;align-items:center;gap:8px;min-width:0;margin-top:10px;flex-wrap:wrap}
@@ -372,6 +371,39 @@ header{
            letter-spacing:.1em;color:var(--acier-f);text-transform:uppercase}
 
 /* ============================================================ etats */
+.hl{display:flex;align-items:baseline;gap:9px;min-width:0;padding:8px 11px;
+    border-bottom:1px solid var(--gravure-f)}
+.hl:last-child{border-bottom:0}
+.hl>*{min-width:0}
+.hl-d{flex:0 0 auto;font-size:8.5px}
+.hl-r{flex:0 0 auto;font:500 12px/1 "DM Mono",monospace;color:var(--zinc);
+      font-variant-numeric:tabular-nums}
+.hl-s{flex:0 0 auto;font-size:12px;color:var(--ambre)}
+.hl-x{margin-left:auto;text-align:right;font:400 11px/1.35 "Instrument Sans",sans-serif;
+      color:var(--acier-f);overflow:hidden}
+.jbloc{background:var(--plaque);border-radius:2px;overflow:hidden;
+  border-top:1px solid var(--liseré-h);border-left:1px solid var(--liseré-h);
+  border-right:1px solid var(--liseré-b);border-bottom:1px solid var(--liseré-b)}
+.jl{display:flex;align-items:center;gap:9px;min-width:0;padding:10px 11px;
+    border-bottom:1px solid var(--gravure-f);cursor:pointer}
+.jl:last-child{border-bottom:0}
+.jl:active{background:var(--plaque-h)}
+.jl>*{min-width:0}
+.jl-r{flex:0 0 auto;font-size:9px}
+.jl-a{flex:0 0 auto;font-size:12px;color:var(--zinc)}
+.jl-s{flex:0 0 auto;font:500 14px/1 "DM Mono",monospace;color:var(--ambre);
+      font-variant-numeric:tabular-nums}
+.jl-x{margin-left:auto;text-align:right;font:400 11px/1.35 "Instrument Sans",sans-serif;
+      color:var(--acier-f);overflow:hidden}
+.jl-x .mo{font-size:12px;color:var(--zinc)}
+.ok{color:var(--acier)}
+.ko{color:#F0B5AE}
+.bandeau{display:flex;gap:1px;background:var(--gravure-f);border:1px solid var(--gravure-f);
+  border-radius:2px;margin-top:12px}
+.bandeau>div{flex:1;min-width:0;background:var(--plaque);padding:9px 8px;
+  display:flex;flex-direction:column;gap:5px}
+.bandeau .v{font:400 11px/1 "DM Mono",monospace;color:var(--zinc);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .empty,.loading{padding:52px 20px;text-align:center}
 .empty .lab,.loading .lab{margin-bottom:8px}
 .empty p{margin:0;font:400 14px/1.5 "Instrument Sans",sans-serif;color:var(--acier-f);
@@ -470,6 +502,11 @@ nav span{font:600 9px/1 Archivo,sans-serif;letter-spacing:.1em;text-transform:up
   <div class="wrap"><div id="wlist"></div></div>
 </section>
 
+<!-- ============================================ QUOTIDIEN ============ -->
+<section class="view" id="v-jour" role="region" aria-label="Intelligence du jour">
+  <div class="wrap" id="jour"></div>
+</section>
+
 <!-- ============================================ INSIGHTS ============== -->
 <section class="view" id="v-insights" role="region" aria-label="Insights">
   <div class="wrap" id="ins"></div>
@@ -478,6 +515,9 @@ nav span{font:600 9px/1 Archivo,sans-serif;letter-spacing:.1em;text-transform:up
 </div>
 
 <nav role="navigation" aria-label="Navigation principale">
+  <button data-nav="/jour" aria-label="Intelligence du jour">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+      <path d="M4 5h16v15H4zM4 9h16M8 3v4M16 3v4"/><path d="M8 13h3M8 16h6"/></svg><span>Quotidien</span></button>
   <button data-nav="/" aria-label="Classement">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
       <path d="M3 20h18M6 20V9M12 20V4M18 20v-7"/></svg><span>Classement</span></button>
@@ -487,9 +527,6 @@ nav span{font:600 9px/1 Archivo,sans-serif;letter-spacing:.1em;text-transform:up
   <button data-nav="/watch" aria-label="Watchlist">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
       <path d="M6 3h12v18l-6-4.5L6 21z"/></svg><span>Watchlist</span></button>
-  <button data-nav="/insights" aria-label="Insights">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-      <circle cx="12" cy="12" r="8.5"/><path d="M12 8v5l3 2"/></svg><span>Insights</span></button>
 </nav>
 
 <script>
@@ -626,6 +663,8 @@ function carte(w) {
     <div class="c0">
       <span class="no"><span>N° ${String(w.rang).padStart(3, '0')}</span></span>
       ${marqueObs(w)}
+      ${w.st && w.st !== 'RANKED'
+        ? `<span class="prov">${w.st === 'DISCOVERY' ? 'Observation' : 'Archivé'}</span>` : ''}
       <span class="coins">
         ${(w.coins || []).slice(0, 3).map(c => `<span class="pill">${esc(c)}</span>`).join('')}
       </span>
@@ -671,7 +710,13 @@ const TRIS = [
   ['actif',  'Activité',     (a, b) => (b.r30 ?? 0) - (a.r30 ?? 0)],
 ];
 const FILTRES = [
+  // « Classés » d'abord ET par defaut : c'est la definition du produit — un
+  // wallet RANKED apparait dans l'application, les autres sont en observation ou
+  // archives. Les montrer melanges laisserait croire que 248 wallets sont
+  // recommandes alors que le systeme n'en retient que 195.
+  ['ranked',  'Classés',         w => w.st === 'RANKED'],
   ['tous',    'Tous',            () => true],
+  ['disco',   'En observation',  w => w.st === 'DISCOVERY'],
   ['top10',   'Top 10',          w => w.rang <= 10],
   ['top20',   'Top 20',          w => w.rang <= 20],
   ['q3',      'Qualité élevée',  w => w.conf_lab === 'elevee'],
@@ -684,7 +729,11 @@ const FILTRES = [
 
 /* Etat de navigation : conserve pour que revenir au classement depuis une
    fiche restitue exactement l'ecran quitte, filtres et position compris. */
-const ETAT = S.get('etat', { tri: 'score', filtre: 'tous', q: '' });
+const ETAT = S.get('etat', { tri: 'score', filtre: 'ranked', q: '' });
+// Sans registre, le statut de chaque wallet vaut null et le filtre « Classés »
+// viderait l'ecran. On retombe alors sur « Tous » : une liste complete est
+// preferable a une liste vide qui donnerait a croire qu'il n'y a rien.
+if (ETAT.filtre === 'ranked' && !W.some(w => w.st === 'RANKED')) ETAT.filtre = 'tous';
 let scrollRank = 0;
 
 function selection() {
@@ -898,6 +947,75 @@ async function copier(txt, bouton, libelle) {
   setTimeout(() => { bouton.textContent = libelle || av; bouton.classList.remove('ok'); }, 1500);
 }
 
+/* ---------- cycle de vie : statut, verdict, historique ----------
+   Repondre a « pourquoi #3 aujourd'hui, pourquoi #17 hier, pourquoi retire »
+   demande une trace, pas un calcul. Elle vient du registre, en append seul.
+   Sans registre, la section dit qu'il n'y a pas d'historique — elle n'en
+   fabrique pas un a partir de l'etat courant. */
+const ETIQ = {
+  RANKED: 'Classé', DISCOVERY: 'En observation', ARCHIVED: 'Archivé',
+  EXCELLENT_CANDIDATE: 'Candidat excellent', PROMISING: 'Prometteur',
+  INSUFFICIENT_DATA: 'Données insuffisantes', REJECTED: 'Non qualifié',
+};
+const etiq = v => v ? (ETIQ[v] || v) : null;
+
+function frise(h) {
+  /* Deux traces sur la meme abscisse temporelle : le RANG (echelle inversee,
+     1 en haut) et le SCORE. Le rang est ce qui interesse, le score explique. */
+  const pts = h.filter(x => x[2] != null);
+  if (pts.length < 2) return '';
+  const L = 340, H = 92, pad = 10;
+  const ts = pts.map(x => x[0]), rg = pts.map(x => x[2]);
+  const t0 = Math.min(...ts), t1 = Math.max(...ts);
+  const r0 = Math.min(...rg), r1 = Math.max(...rg);
+  const X = t => pad + ((t - t0) / ((t1 - t0) || 1)) * (L - 2 * pad);
+  const Y = r => pad + ((r - r0) / ((r1 - r0) || 1)) * (H - 2 * pad - 12);
+  let d = '';
+  pts.forEach((x, i) => { d += (i ? ' L' : 'M') + X(x[0]).toFixed(1) + ',' + Y(x[2]).toFixed(1); });
+  const marques = pts.map(x =>
+    `<circle cx="${X(x[0]).toFixed(1)}" cy="${Y(x[2]).toFixed(1)}" r="2"
+      fill="var(--ambre)"/>`).join('');
+  return `<svg viewBox="0 0 ${L} ${H}" style="display:block;width:100%;height:auto"
+      role="img" aria-label="Évolution du rang sur ${pts.length} relevés">
+    <path d="${d}" fill="none" stroke="var(--acier)" stroke-width="1.2"/>
+    ${marques}
+    <text x="${pad}" y="${H - 2}" fill="var(--acier-f)" font-size="8"
+      font-family="Martian Mono, monospace">#${r0}</text>
+    <text x="${L - pad}" y="${H - 2}" fill="var(--acier-f)" font-size="8"
+      font-family="Martian Mono, monospace" text-anchor="end">#${r1}</text>
+  </svg>`;
+}
+
+function cycleVie(w) {
+  const h = w.histo || [];
+  const st = etiq(w.st), cl = etiq(w.classe);
+  const entete = `<div class="cmp" style="grid-template-columns:auto 1fr">
+      <div class="k">Statut</div><div>${st ? esc(st) : NA}</div>
+      <div class="k">Qualification</div><div>${cl ? esc(cl) : NA}</div>
+      <div class="k">Découvert via</div><div>${w.src ? esc(w.src) : NA}</div>
+      <div class="k">Première vue</div><div>${w.vu ? date(w.vu * 1000) : NA}</div>
+    </div>`;
+  if (!h.length) {
+    return entete + `<p class="note">Aucun historique enregistré : le registre ne
+      contient pas encore de relevé pour ce wallet. Il s'en remplira à chaque cycle.</p>`;
+  }
+  const f = frise(h);
+  const lignes = h.slice().reverse().slice(0, 12).map(x => {
+    const [ts, sc, rg, statut, raison] = x;
+    return `<div class="hl">
+      <span class="hl-d lab">${date(ts * 1000)}</span>
+      <span class="hl-r">${rg != null ? '#' + rg : '—'}</span>
+      <span class="hl-s mo">${sc != null ? sc.toFixed(1) : '—'}</span>
+      <span class="hl-x">${esc(etiq(statut) || statut)}${raison ? ' · ' + esc(raison) : ''}</span>
+    </div>`;
+  }).join('');
+  return entete +
+    (f ? `<div class="well" style="margin-top:10px">${f}
+      <div class="wlegend"><span>Rang au fil des cycles</span>
+      <span>${h.length} relevé${h.length > 1 ? 's' : ''}</span></div></div>` : '') +
+    `<div class="jbloc" style="margin-top:10px">${lignes}</div>`;
+}
+
 /* ============================================================ fiche wallet */
 function cellule(k, v) { return `<div class="cell"><div class="cell-k">${k}</div>
   <div class="cell-v">${v}</div></div>`; }
@@ -1071,6 +1189,9 @@ function fiche(w) {
          <span>Aucun facteur saillant : les métriques de ce wallet restent dans la moyenne
          de la population.</span></div></div>` : ''}
 
+    <div class="sect"><span class="lab">Cycle de vie</span></div>
+    ${cycleVie(w)}
+
     <div class="sect"><span class="lab">Provenance des données</span></div>
     ${prot}
 
@@ -1147,6 +1268,100 @@ function rendWatch() {
        La liste reste sur cet appareil.</p></div>`;
 }
 
+/* ============================================================ quotidien
+   La page qui repond a « qu'est-ce qui a change ce matin ». Elle ne recalcule
+   rien : elle lit le rapport produit par le cycle. Sans cycle execute, elle le
+   dit, au lieu d'afficher une journee vide qui aurait l'air normale. */
+const DAILY = DB.daily || null;
+const ARCH = DB.archives || [];
+
+function ligneW(a, extra) {
+  const w = byA[a];
+  if (!w) {
+    // Wallet connu du registre mais absent du classement courant : on montre ce
+    // qu'on a, on ne reconstitue pas le reste.
+    return `<div class="jl"><span class="jl-a mo">${court(a)}</span>
+      <span class="jl-x">${extra || NA}</span></div>`;
+  }
+  return `<div class="jl" data-a="${w.a}" role="button" tabindex="0"
+      aria-label="Rang ${w.rang}, score ${w.score.toFixed(1)}. Ouvrir la fiche.">
+    <span class="jl-r lab">#${String(w.rang).padStart(3, '0')}</span>
+    <span class="jl-a mo">${court(w.a)}</span>
+    <span class="jl-s">${w.score.toFixed(1)}</span>
+    <span class="jl-x">${extra || ''}</span></div>`;
+}
+
+function sectionJ(titre, lignes, vide) {
+  return `<div class="sect"><span class="lab">${titre}</span></div>` +
+    (lignes.length ? `<div class="jbloc">${lignes.join('')}</div>`
+                   : `<p class="note">${vide}</p>`);
+}
+
+function rendJour() {
+  const el = document.getElementById('jour');
+  if (!DAILY) {
+    el.innerHTML = `<div class="empty"><div class="lab">Aucun cycle exécuté</div>
+      <p>Le cycle du matin n'a pas encore tourné sur cette machine. Lancez
+      <span class="mo">python -m ht.matin</span>, ou attendez 08:00.</p></div>`;
+    return;
+  }
+  const d = DAILY, h = d.data_health || {}, sy = d.system_health || {};
+  const top = (d.top20 || []).map(x => ligneW(x.a, `<span class="mo">${usd(x.pnl)}</span>`));
+  const neufs = (d.new_today || []).map(x => ligneW(x.a, `<span class="ok">${esc(x.message)}</span>`));
+  const up = (d.top_movers || []).map(x => ligneW(x.a, `<span class="ok">▲ ${esc(x.message)}</span>`));
+  const down = (d.declining || []).map(x => ligneW(x.a, `<span class="ko">▼ ${esc(x.message)}</span>`));
+  const arch = (d.archived || []).map(x => ligneW(x.a, `<span class="ko">${esc(x.raison || '')}</span>`));
+  const suivis = W.filter(w => WATCH.has(w.a)).map(w => ligneW(w.a, `<span class="mo">${usd(w.pnl)}</span>`));
+
+  el.innerHTML = `
+    <div class="bandeau">
+      <div><span class="lab">Cycle</span><span class="v mo">${esc(d.cycle_id || '—')}</span></div>
+      <div><span class="lab">Mode</span><span class="v mo">${esc(d.mode || '—')}</span></div>
+      <div><span class="lab">Durée</span><span class="v mo">${sy.duree_s ?? '—'} s</span></div>
+    </div>
+
+    ${sectionJ('Nouveaux aujourd\u2019hui', neufs,
+      'Aucune entrée remarquable ce matin. Un wallet n\u2019est signalé que s\u2019il satisfait les ' +
+      'critères de qualification ET se place dans les vingt premiers — jamais sur son seul gain.')}
+    ${sectionJ('En hausse', up, 'Aucun mouvement de rang notable.')}
+    ${sectionJ('En baisse', down, 'Aucune chute de rang notable.')}
+    ${sectionJ('Archivés', arch,
+      'Aucun retrait. Un wallet n\u2019est retiré que sur un critère réellement réfuté, jamais ' +
+      'sur une donnée simplement manquante.')}
+    ${sectionJ('Watchlist', suivis,
+      'Aucun wallet suivi. Ouvrez une fiche et touchez « Ajouter à la watchlist ».')}
+    ${sectionJ('Top 20', top, 'Classement indisponible.')}
+
+    <div class="sect"><span class="lab">Santé des données</span></div>
+    <div class="plaque">
+      ${cellule('Analysés', String(h.wallets_analyses ?? '—'))}
+      ${cellule('Discovery', String(h.discovery ?? '—'))}
+      ${cellule('Classés', String(h.ranked ?? '—'))}
+      ${cellule('Archivés', String(h.archived ?? '—'))}
+      ${cellule('Watchlist', String(h.watchlist ?? '—'))}
+      ${cellule('À réévaluer', String(h.a_reevaluer ?? '—'))}
+      ${cellule('Requêtes HyperTracker', String(h.requetes_hypertracker_utilisees ?? 0))}
+      ${cellule('Sans proba calibrée', String(h.sans_probabilite_calibree ?? 0))}
+    </div>
+    ${(h.erreurs_collecte || []).length
+      ? `<p class="note ko">Erreurs de collecte : ${(h.erreurs_collecte || []).map(esc).join(' · ')}</p>`
+      : `<p class="note">Aucune erreur de collecte sur ce cycle.</p>`}
+
+    ${(d.blocages || []).map(b => `<div class="prot" style="margin-top:12px">
+      <h4>Blocage — ${esc(b.sujet)} (${esc(b.portee)})</h4>
+      <p>${esc(b.cause)}</p>
+      <p style="margin-top:8px"><b>Interdit automatiquement :</b> ${esc(b.action_interdite)}</p>
+      <p style="margin-top:6px"><b>Demande :</b> ${esc(b.demande)}</p></div>`).join('')}
+
+    <div class="sect"><span class="lab">Lecture du score</span></div>
+    <div class="prot"><h4>Deux grandeurs, jamais une seule</h4>
+      <p>Le <b>score</b> situe la performance par trade clos. La <b>probabilité</b> dit
+      seulement à quel point cette estimation est soutenue par les données. Les deux ne se
+      confondent pas — et ne promettent aucun gain futur.</p></div>
+    <p class="pied">&#961; ${nb(META.spearman, 4)} · ECE ${nb(META.ece, 4)} ·
+      Verdict <b>${esc(META.verdict)}</b></p>`;
+}
+
 /* ============================================================ insights */
 function rendInsights() {
   const n = RP.wallets ? RP.wallets.length : 0;
@@ -1200,6 +1415,7 @@ const ECRANS = {
   '/search':   { t: 'Recherche',    s: 'Adresse ou actif' },
   '/watch':    { t: 'Watchlist',    s: 'Suivis sur cet appareil' },
   '/insights': { t: 'Insights',     s: 'Lecture du score' },
+  '/jour':     { t: 'Quotidien',    s: 'Ce qui a changé ce matin' },
 };
 function entete(route, w) {
   const hd = document.getElementById('hd'), ex = document.getElementById('hextra');
@@ -1225,7 +1441,8 @@ function entete(route, w) {
    et une fiche est une VRAIE page avec sa propre adresse, pas un panneau. */
 function route() {
   const h = (location.hash || '#/').slice(1);
-  const vues = { '/': 'v-rank', '/search': 'v-rank', '/watch': 'v-watch', '/insights': 'v-insights' };
+  const vues = { '/': 'v-rank', '/search': 'v-rank', '/watch': 'v-watch',
+                 '/insights': 'v-insights', '/jour': 'v-jour' };
   document.querySelectorAll('.view').forEach(v => v.classList.remove('on'));
 
   if (h.startsWith('/w/')) {
@@ -1243,6 +1460,7 @@ function route() {
 
   if (id === 'v-watch') rendWatch();
   if (id === 'v-insights') rendInsights();
+  if (id === 'v-jour') rendJour();
   if (id === 'v-rank') {
     if (h === '/search') { setTimeout(() => document.getElementById('q').focus(), 60); }
     // restitution exacte de l'ecran quitte : filtres, tri, recherche, position
@@ -1261,7 +1479,7 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
 
 /* une carte ouvre une page : delegation, pour ne pas poser 231 ecouteurs */
 document.addEventListener('click', e => {
-  const c = e.target.closest('.card[data-a]');
+  const c = e.target.closest('.card[data-a], .jl[data-a]');
   if (c) { scrollRank = window.scrollY; location.hash = '#/w/' + c.dataset.a; }
 });
 document.addEventListener('keydown', e => {

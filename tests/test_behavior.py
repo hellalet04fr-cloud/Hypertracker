@@ -10,7 +10,15 @@ Deux familles, jamais melangees :
     donnee reelle et verifient des invariants, pas des valeurs devinees.
     Ils sont SKIP (jamais verts par defaut) si la donnee est absente.
 """
+
 from __future__ import annotations
+
+# Cycle LOURD : ce fichier travaille sur le lac de donnees reel et depasse
+# la minute. Il est exclu du cycle rapide par pytest.ini ; lancer avec
+# `pytest -m lent` pour l'executer.
+import pytest
+pytestmark = pytest.mark.lent
+
 
 import os
 import sys

@@ -100,7 +100,41 @@ a priori scellé : m = −0.0724, tau = 0.0744
 - Quota **global**, pas par endpoint. WebSocket indisponible sur l'offre Free.
 - Le niveau *fill* de `/fills` est DERIVED, donc ne certifie pas.
 
-### 3.3 Couche application — `app/` (5 scripts)
+### 3.3 Couche automatisation — le cycle du matin
+
+Depuis le 2026-08-25, HyperTracker n'est plus un classement fige : c'est un cycle
+qui tourne seul.
+
+**Trois etats persistants** (`ht/registre.py`, SQLite en append seul) :
+
+| Etat | Sens |
+|---|---|
+| `DISCOVERY` | decouvert, pas encore assez documente |
+| `RANKED` | satisfait les criteres de candidature — **apparait dans l'app** |
+| `ARCHIVED` | ne les satisfait plus. **Aucune donnee n'est jamais supprimee** |
+
+Le retour `ARCHIVED -> RANKED` est automatique des requalification.
+
+**La regle centrale** — `ht/lifecycle.qualifies_for_ranking()` — est deterministe et
+n'utilise **que** les seuils pre-enregistres de `ht/screening.py`. Le score ne participe
+pas a la qualification : il classe des wallets deja qualifies. Quatre verdicts :
+`EXCELLENT_CANDIDATE`, `PROMISING`, `INSUFFICIENT_DATA`, `REJECTED`.
+
+**Asymetrie assumee** : on promeut sur une preuve, on retire sur une preuve. Un critere
+que les donnees locales ne permettent pas de trancher ne peut **jamais** motiver un
+archivage.
+
+**Le cycle** (`ht/matin.py`) — 9 phases, `--dry-run` complet, **0 requete HyperTracker** :
+DATA, DISCOVERY, COLLECTE, EVALUATION, RANKING, LIFECYCLE, ALERTS, REPORT, UI.
+Planifie par `ht/planifier.py` a **08:00 Europe/Paris** (heure locale, donc l'heure d'ete
+est suivie automatiquement ; le module refuse d'installer si l'horloge machine ne coincide
+pas avec Paris).
+
+**Le classement est enfin dans le depot.** `ht/scoring.py` et `ht/classement.py` reprennent
+a l'identique les primitives qui vivaient hors depot — verifie : **zero champ divergent**
+sur les 231 wallets de production. Sans cela, aucune automatisation n'etait possible.
+
+### 3.4 Couche application — `app/` (5 scripts)
 
 App mobile réelle, 5 onglets : **Classement / Recherche / Watchlist / Comparer / Réputation**.
 Palette terminal sombre, Manrope + IBM Plex Mono, safe-area iPhone, `viewport-fit=cover`.
@@ -238,6 +272,7 @@ Progression en %, verrous rencontrés, prochaine action unique.
 
 | Verrou | Nature | Contournement |
 |---|---|---|
+| **Probabilite calibree non rejouable** | **Interne** | Le modele isotonique ajuste n'a jamais ete persiste — seuls ses indicateurs le sont (ECE 0.0647). Un wallet apparu depuis n'a donc pas de `p_cal` et affiche N/D. Le reajuster serait une decision scientifique sur un objet scelle : interdit sans autorisation explicite. Le rapport quotidien compte ces wallets. |
 | Whales de leaderboard non mesurables | **Externe et structurel** | Demanderait un modèle *mark-to-market* sur positions ouvertes — c'est-à-dire un autre objet de mesure, pas une amélioration de celui-ci. |
 | Quota HyperTracker | **Externe** | Aucun contournement légitime. Reset à 03:00 UTC. |
 | Suite de tests lente | Interne, non bloquant | Les tests sur données réelles manipulent 16,5 M de lignes. Séparer les marqueurs `reel` du cycle rapide serait la piste. |

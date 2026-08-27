@@ -6,7 +6,15 @@ INSUFFISANT et les etages en aval BLOQUE — jamais executes sur un substitut. U
 pipeline qui rendrait un rapport "complet" a partir de donnees absentes serait le
 pire defaut possible du projet.
 """
+
 from __future__ import annotations
+
+# Cycle LOURD : ce fichier travaille sur le lac de donnees reel et depasse
+# la minute. Il est exclu du cycle rapide par pytest.ini ; lancer avec
+# `pytest -m lent` pour l'executer.
+import pytest
+pytestmark = pytest.mark.lent
+
 
 import os
 import sys
