@@ -455,15 +455,15 @@ class Cycle:
         co = self.phases.get("COLLECTE", {})
         if co.get("refuses_budget"):
             return (f"{co['refuses_budget']} wallet(s) attendent une collecte : "
-                    f"relancer avec --budget plus eleve, ou attendre le cycle suivant")
+                    f"relancer avec un budget plus élevé, ou attendre le cycle suivant")
         if self.erreurs:
             return f"traiter {len(self.erreurs)} erreur(s) de cycle"
         if self.phases.get("RANKING", {}).get("sans_probabilite_calibree"):
             return ("autoriser ou refuser explicitement le rejeu du recalibrage "
-                    "isotonique (voir blocages)")
+                    "isotonique — voir la section Blocages")
         n = R.compter(self.c)
         if n.get("sales", 0):
-            return f"{n['sales']} wallet(s) restent a evaluer : laisser les cycles avancer"
+            return f"{n['sales']} wallet(s) restent à évaluer : laisser les cycles avancer"
         return "aucune action requise"
 
     def _blocages(self) -> list[dict]:
@@ -472,15 +472,17 @@ class Cycle:
         b = []
         sans = self.phases.get("RANKING", {}).get("sans_probabilite_calibree", 0)
         if sans:
+            # Ce texte est AFFICHE A L'UTILISATEUR : il porte donc ses accents,
+            # contrairement aux commentaires et aux journaux techniques du depot.
             b.append({
-                "sujet": "probabilite calibree",
+                "sujet": "probabilité calibrée",
                 "portee": f"{sans} wallet(s)",
-                "cause": "le modele isotonique ajuste n'a jamais ete persiste : seuls "
-                         "ses indicateurs le sont (ECE 0.0647). Impossible de calibrer "
-                         "un wallet absent du lot d'origine.",
-                "action_interdite": "reajuster l'isotonique sur la population du jour "
-                                    "serait une decision scientifique (la calibration "
-                                    "est pre-enregistree et scellee)",
+                "cause": "le modèle isotonique ajusté n'a jamais été persisté : seuls "
+                         "ses indicateurs le sont (ECE 0,0647). Il est donc impossible "
+                         "de calibrer un wallet absent du lot d'origine.",
+                "action_interdite": "réajuster l'isotonique sur la population du jour "
+                                    "serait une décision scientifique — la calibration "
+                                    "est pré-enregistrée et scellée",
                 "demande": "autorisation humaine explicite pour rejouer le recalibrage",
             })
         return b

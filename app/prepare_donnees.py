@@ -78,7 +78,7 @@ def prepare(a, w):
         out.update({"win": None, "pf": None, "best": None, "pire": None,
                     "duree_h": None, "tpj": None, "vol": None, "eq": [], "hist": [],
                     "coins": [], "t0": None, "t1": None, "ddc": [], "frais": None,
-                    "stab": None, "pire_serie": None, "mois": []})
+                    "stab": None, "pire_serie": None, "mois": [], "act": []})
         return out
 
     gains = [x for x in r if x > 0]
@@ -151,6 +151,16 @@ def prepare(a, w):
         out["stab"] = None
         out["pire_serie"] = None
     out["mois"] = [[f"{y:04d}-{m:02d}", round(par_mois[(y, m)], 2)] for y, m in mois]
+
+    # ACTIVITE DANS LE TEMPS : nombre de trades clos par mois. Derivee des memes
+    # horodatages que le PnL mensuel, donc exactement aussi reelle. C'est la seule
+    # facon honnete de montrer « ce wallet trade-t-il encore » sur une courbe :
+    # le score, lui, ignore la fraicheur.
+    cnt_mois = {}
+    for t in tr:
+        d2 = time.gmtime(t["close"] / 1000)
+        cnt_mois[(d2.tm_year, d2.tm_mon)] = cnt_mois.get((d2.tm_year, d2.tm_mon), 0) + 1
+    out["act"] = [[f"{y:04d}-{m:02d}", cnt_mois[(y, m)]] for y, m in sorted(cnt_mois)]
     # sparkline : forme normalisee 0-1, pour scanner la trajectoire sans ouvrir la fiche
     sp = echant([y for _, y in eq], N_SPARK)
     lo, hi = min(sp), max(sp)
@@ -319,6 +329,11 @@ for i, w in enumerate(CL["classement"], 1):
     # `histo` et non `hist` : ce dernier porte deja l'histogramme des PnL, et
     # l'ecraser aurait vide silencieusement le graphique de distribution.
     d["histo"] = REG["hist"].get(w["a"], [])
+    # VARIATION DE RANG entre les deux derniers releves portant un rang. Non
+    # calculable avec moins de deux releves : le champ reste None et s'affiche
+    # N/D. Mesure : 195 wallets sur 267 en ont assez, 72 n'en ont pas.
+    rangs = [x[2] for x in d["histo"] if x[2] is not None]
+    d["drang"] = (rangs[-2] - rangs[-1]) if len(rangs) >= 2 else None
     wallets.append(d)
 
 meta = {
