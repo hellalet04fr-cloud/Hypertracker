@@ -338,7 +338,11 @@ for i, w in enumerate(CL["classement"], 1):
 
 meta = {
     "n": len(wallets), "trades": sum(w["n"] for w in wallets),
-    "maj": "2026-08-24",
+    # DATE DERIVEE, plus un litteral. Elle etait ecrite en dur et se perimait
+    # a chaque cycle : l'ecran Donnees annoncait « mise a jour 2026-08-24 »
+    # trois lignes au-dessus de « derniere collecte 27 aout ». Le seul
+    # indicateur nomme « fraicheur des donnees » se contredisait lui-meme.
+    "maj": time.strftime("%Y-%m-%d"),
     "spearman": round(CMP["primaire"]["B"][0], 4),
     "p": CMP["primaire"]["B"][1],
     "ece": round(CAL["ece_apres"], 4),

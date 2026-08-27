@@ -1053,7 +1053,7 @@ function retrecissement(w) {
           font-family="DM Mono, monospace" text-anchor="middle"
           >${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(3)}</text>`);
   return `<svg viewBox="0 0 ${L} ${H}" style="display:block;width:100%;height:auto" role="img"
-    aria-label="Sharpe observé ${w.sr.toFixed(4)} ramené à ${w.post.toFixed(4)}">${p.join('')}</svg>`;
+    aria-label="Sharpe brut ${w.sr.toFixed(4)} ramené à ${w.post.toFixed(4)}">${p.join('')}</svg>`;
 }
 
 function cycleVie(w) {
@@ -1174,7 +1174,10 @@ function fiche(w) {
     <div class="sect"><span class="lab">Rétrécissement</span></div>
     <div class="well" style="padding:14px 12px 12px">
       ${retrecissement(w)}
-      <div class="wleg"><span>Sharpe observé ${nb(w.sr, 4)}</span>
+      <!-- « brut », PAS « observé » : ce Sharpe est DERIVE de la reconstruction.
+           Le mot « Observé » est reservé à la donnée native HyperTracker, et
+           l'employer ici mettait deux nombres différents sous le même mot. -->
+      <div class="wleg"><span>Sharpe brut ${nb(w.sr, 4)}</span>
         <span>Retenu ${nb(w.post, 4)}</span></div>
     </div>
     <p class="note">Un échantillon mince est ramené vers la moyenne de la population :
@@ -1392,8 +1395,10 @@ function rendJour() {
       { t: 'Devenus inactifs',
         lignes: inactifs.map(w => ligneC(w.a, 'dernier trade il y a ' + jours(w.dort_j))),
         vide: 'Aucun wallet classé n\u2019est dormant depuis plus de deux mois.' },
-      { t: 'Meilleurs du jour',
-        lignes: top.map(w => ligneC(w.a, usd(w.pnl))),
+      // « au classement », pas « du jour » : la valeur affichee est le PnL
+      // CUMULE sur tout l'historique du wallet, pas un resultat de la journee.
+      { t: 'Meilleurs au classement',
+        lignes: top.map(w => ligneC(w.a, `${usd(w.pnl)} cumulé`)),
         vide: 'Classement indisponible.' },
     ])}
 
@@ -1448,7 +1453,7 @@ function rendDisco() {
       'place du registre : les wallets antérieurs n\u2019ont pas de date de qualification.',
       qualifies.length)}
 
-    ${sectionL('En observation', surveiller.map(x => ligneC(x.a,
+    ${sectionL('Candidats du dernier cycle', surveiller.map(x => ligneC(x.a,
       `${esc(CLASSES[x.classe] || x.classe || '')}${
         x.manque && x.manque.length ? ' · ' + esc(courtManque(x.manque[0])) : ''}`)),
       'Aucun candidat en attente dans le dernier rapport.', surveiller.length)}

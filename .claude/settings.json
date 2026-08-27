@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /c/Users/maram/Hypertracker && python -m ht.verifier --hook 2>/dev/null || true",
+            "timeout": 180,
+            "statusMessage": "Vérification du dépôt…"
+          }
+        ]
+      }
+    ]
+  }
+}
