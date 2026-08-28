@@ -160,6 +160,11 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
     // L'ordre choisi par l'utilisateur est un tri a part entiere : sans lui, les
     // fleches de reordonnancement deplaceraient un rang que personne ne voit.
     ['mien', 'Mon ordre', `true`, `W.length`],
+    // Le score ignore la fraicheur par construction : le tri par defaut ne doit
+    // pas presenter comme « le meilleur » un wallet mort depuis un an.
+    ['score_a', 'Score · actifs',
+     `courant.slice(0,20).every((w,i,a)=>i===0||(((a[i-1].dort_j??0)>60?1:0)<=((w.dort_j??0)>60?1:0)))`,
+     null],
   ];
   for (const [cle, nom, mono, manquants] of T) {
     await js(`document.querySelector('[data-t="${cle}"]').click()`); await dodo(230);
@@ -169,6 +174,15 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
         cle === 'mien' ? 'n’ordonne que les wallets suivis — vide pour les autres'
                        : (nd ? `${nd} wallet(s) sans cette grandeur, rangés en fin` : 'monotone'));
   }
+  await js(`document.querySelector('[data-t="conf"]').click()`); await dodo(400);
+  const nSansP = await js(`W.filter(w=>w.conf==null).length`);
+  dit(await js(`SEP.i>0 && SEP.n===${nSansP}
+    && document.querySelectorAll('#liste .sep').length>=0`) ? 'OK' : 'KO',
+      'les non-mesurables sortent de l’ordre au lieu d’en occuper la queue',
+      `${nSansP} wallets sans probabilité calibrée, regroupés sous un séparateur nommé`);
+  dit(await js(`courant.slice(0,SEP.i).every(w=>w.conf!=null)
+    && courant.slice(SEP.i).every(w=>w.conf==null)`) ? 'OK' : 'KO',
+      'la partition mesurable / non mesurable est stricte');
   await js(`document.querySelector('[data-t="score"]').click()`); await dodo(250);
 
   // ═══════════════════════════════════════════════════ 4. RECHERCHE
@@ -221,6 +235,25 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
     .every(r => !!r.querySelector('.bg.obs') === !!byA[r.dataset.a].obs)`)
       ? 'OK' : 'KO', 'provenance : seule l’exception est marquée',
       `${nObs}/${NW} observés — 262 mentions « Dérivé » identiques n’informeraient personne`);
+  // ── LOT 2. Ce que la liste ne doit PLUS annoncer.
+  dit(await js(`[...document.querySelectorAll('#liste .row')].every(r=>{
+    const w=byA[r.dataset.a], t=r.querySelector('.sc').textContent;
+    return (w.ic[1]-w.ic[0])>20 ? t.indexOf('.')<0 && t.indexOf(',')<0 : true;})`)
+      ? 'OK' : 'KO', 'aucune décimale au-delà de 20 points d’intervalle',
+      'un chiffre n’est jamais plus précis que son intervalle');
+  dit(await js(`[...document.querySelectorAll('#liste .row')]
+    .every(r=>r.querySelector('.no').textContent.trim()==='G'+String(byA[r.dataset.a].groupe).padStart(2,'0'))`)
+      ? 'OK' : 'KO', 'la ligne porte la bande d’équivalence, pas un rang unique',
+      `${await js('META.bandes')} bandes pour ${NW} wallets`);
+  const nDort = await js(`W.filter(w=>(w.dort_j??0)>60).length`);
+  dit(await js(`[...document.querySelectorAll('#liste .row')]
+    .every(r=>!!r.querySelector('.bg.dort')===((byA[r.dataset.a].dort_j??0)>60))`)
+      ? 'OK' : 'KO', 'l’inactivité est marquée avec la force d’un signe',
+      `${nDort}/${NW} dormants — le score ne pénalise pas la mort d’un wallet`);
+  dit(await js(`document.querySelectorAll('#verdict .vbn').length===1
+    && /ordre non validé/.test(document.getElementById('verdict').textContent)`)
+      ? 'OK' : 'KO', 'le verdict domine la liste au lieu de la suivre',
+      'INCONCLUSIF affiché au-dessus du premier score, non refermable');
   const ndrang = await js(`W.filter(w=>w.drang==null).length`);
   dit(ndrang ? 'LIM' : 'OK', 'variation de rang affichée',
       `${NW - ndrang}/${NW} calculables — moins de deux relevés pour les autres`);
@@ -264,6 +297,14 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
     v: c.querySelector('.cell-v').textContent.trim()}))`);
   const nd = cells.filter(c => c.v.indexOf('N/D') >= 0);
   dit('OK', 'grille de mesures', `${cells.length} cellules`);
+  dit(await js(`(()=>{const c=[...document.querySelectorAll('#v-wallet .cell')]
+    .find(x=>x.querySelector('.cell-k').textContent.trim()==='Sharpe / trade');
+    if(!c) return false;
+    const t=c.querySelector('.cell-v').textContent.trim();
+    // « 0,39 ± 0,03 » : deux decimales de part et d'autre, jamais quatre.
+    return /^-?[0-9]+,[0-9]{2} . -?[0-9]+,[0-9]{2}$/.test(t.replace(/\\s+/g,' '));})()`)
+      ? 'OK' : 'KO', 'le Sharpe est affiché avec son erreur type',
+      'deux décimales et ± SE (Mertens) : la troisième était déjà du bruit');
   dit(nd.length ? 'LIM' : 'OK', 'grandeurs non disponibles',
       nd.map(c => c.k).join(' · ') + ' — affichées N/D, jamais approchées');
 
@@ -428,8 +469,15 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
     .every(s=>s.getAttribute('role')==='img'&&!!s.getAttribute('aria-label'))`) ? 'OK' : 'KO',
       'rails décrits pour les lecteurs d’écran');
   dit(await js(`[...document.querySelectorAll('#liste .row')]
-    .every(r=>r.getAttribute('tabindex')==='0'&&!!r.getAttribute('aria-label'))`) ? 'OK' : 'KO',
-      'lignes focalisables au clavier');
+    .every(r=>{const b=r.querySelector('.ouvr');
+      return !!b && !!b.getAttribute('aria-label') && !r.hasAttribute('aria-label');})`)
+      ? 'OK' : 'KO', 'lignes ouvrables au clavier, contenu non masqué',
+      'le libellé est sur le bouton, pas sur le conteneur : un aria-label de ' +
+      'conteneur REMPLACE son contenu pour un lecteur d’écran');
+  dit(await js(`(()=>{const b=document.querySelector('#liste .ouvr');
+    const l=b?b.getAttribute('aria-label'):'';
+    return /bande/i.test(l)&&/intervalle/i.test(l)&&/score/i.test(l);})()`) ? 'OK' : 'KO',
+      'le libellé porte les trois canaux du rail', 'score, bande, intervalle');
   dit(await js(`[...document.querySelectorAll('nav button')]
     .every(b=>!!b.getAttribute('aria-label'))`) ? 'OK' : 'KO', 'navigation étiquetée');
   dit(await js(`[...document.styleSheets].some(s=>{try{return [...s.cssRules]

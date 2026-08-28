@@ -168,6 +168,139 @@ const vrai = (nom, cond, detail) =>
     t500.lignes > 0 && t500.texte > 200, JSON.stringify(t500));
   await cmd('Network.setBlockedURLs', { urls: [] });
 
+  // ══════════════════════════════════════════════ M1 — les totaux de section
+  // Le compteur affichait la longueur de la TRANCHE : « Dormants 6 » quand il y
+  // en a 100, soit 44 % des wallets classes. Sous-declarer un risque par un
+  // effet de decoupage est la faute la plus grave de cet ecran.
+  etape = 'M1 totaux de section';
+  await cmd('Page.navigate', { url: URL + '#/' });
+  await dodo(2400);
+  const totDorm = W.filter(w => w.st === 'RANKED' && (w.dort_j ?? 0) > 60).length;
+  const cpt = await js(`(()=>{const out={};
+    document.querySelectorAll('#jour .sect').forEach(x=>{
+      const l=x.querySelector('.lab'), c=x.querySelector('.cpt');
+      if(l&&c) out[l.textContent.trim()]=c.textContent.trim();});
+    return out;})()`);
+  vrai('« Dormants » annonce le total réel, pas la tranche',
+    (cpt['Dormants'] || '').indexOf('/ ' + totDorm) > 0,
+    `affiché « ${cpt['Dormants']} », attendu « … / ${totDorm} »`);
+  vrai('chaque section tronquée annonce affichés / total',
+    Object.values(cpt).some(v => v.indexOf('/') > 0), JSON.stringify(cpt));
+  vrai('un lien mène à la population entière',
+    (await js(`document.querySelectorAll('#jour .tout').length`)) > 0, 'aucun lien');
+  await js(`document.querySelector('#jour .tout[data-f="dormant"]').click()`);
+  await dodo(900);
+  vrai('le lien « Voir les N » ouvre exactement cette population',
+    (await js(`document.getElementById('v-rank').classList.contains('on')`))
+    && (await js(`courant.length`)) === W.filter(w => (w.dort_j ?? 0) > 60).length,
+    'filtre=' + await js(`ETAT.filtre`) + ' n=' + await js(`courant.length`));
+
+  // ══════════════════════════════════════════════ M2/M3 — la précision juste
+  // Largeur mediane de l'IC : 56 points sur 100. Ecrire « 98,1 » sur [64-100]
+  // annonce un dixieme la ou la mesure ne porte pas dix points.
+  etape = 'M2 précision et M3 saturation';
+  await js(`document.querySelector('[data-f="tous"]').click()`); await dodo(500);
+  await js(`window.scrollTo(0, document.body.scrollHeight)`); await dodo(700);
+  const faux = await js(`[...document.querySelectorAll('#liste .row')]
+    .filter(r=>{const w=byA[r.dataset.a], t=r.querySelector('.sc').textContent;
+      return (w.ic[1]-w.ic[0])>20 && /[.,]/.test(t);})
+    .map(r=>r.dataset.a.slice(0,10)+' '+r.querySelector('.sc').textContent)`);
+  vrai('aucune décimale au-delà de 20 points d’intervalle', faux.length === 0,
+    faux.slice(0, 3).join(' · '));
+
+  const zero = W.filter(w => w.ic[0] === w.ic[1]);
+  vrai('des intervalles de largeur nulle existent bien dans les données',
+    zero.length > 0, 'aucun — le contrôle suivant ne prouverait rien');
+  await va('#/w/' + zero[0].a, 1000);
+  const txtZero = await js(`document.getElementById('v-wallet').textContent`);
+  vrai('un IC de largeur nulle n’est jamais affiché comme un intervalle',
+    txtZero.indexOf(zero[0].ic[0] + '–' + zero[0].ic[1]) < 0
+    && /borne de l’échelle/.test(txtZero),
+    'la fiche présente encore ' + zero[0].ic[0] + '–' + zero[0].ic[1]);
+  vrai('la saturation est dessinée par un mors ouvert, pas fermé',
+    await js(`(()=>{const s=document.querySelector('#v-wallet svg.rail');
+      return !!s && s.innerHTML.indexOf('<path') >= 0;})()`), 'mors fermé sur une borne');
+
+  // ══════════════════════════════════════════════ M4 — le verdict domine
+  etape = 'M4 verdict visible sans défiler';
+  await va('#/rank', 900);
+  await js(`window.scrollTo(0,0)`); await dodo(300);
+  const vb = await js(`(()=>{const e=document.querySelector('#verdict .vbn');
+    if(!e) return null; const r=e.getBoundingClientRect();
+    return {haut:Math.round(r.top), bas:Math.round(r.bottom),
+      vh:window.innerHeight, txt:e.textContent.trim().slice(0,60)};})()`);
+  vrai('le verdict est visible sans défiler',
+    !!vb && vb.haut < vb.vh && vb.bas > 0, JSON.stringify(vb));
+  vrai('le verdict nomme l’absence de validation',
+    !!vb && /non validé/.test(vb.txt), (vb || {}).txt);
+
+  // ══════════════════════════════════════════════ M6 — le profit factor
+  // Au-dela de 10, un profit factor decrit un echantillon degenere — quelques
+  // gagnants enormes, presque aucun perdant — pas une performance.
+  etape = 'M6 profit factor dégénéré';
+  const pfHauts = W.filter(w => (w.pf || 0) > 10);
+  vrai('des profit factors dégénérés existent dans les données',
+    pfHauts.length > 0, 'aucun — le contrôle suivant ne prouverait rien');
+  const enForts = pfHauts.filter(w => (w.forts || []).some(x => /rofit factor/.test(x)));
+  vrai('aucun profit factor > 10 n’est présenté comme un point fort',
+    enForts.length === 0, enForts.length + ' wallets');
+  const enRisques = pfHauts.filter(w => (w.risques || []).some(x => /dégénérée/.test(x)));
+  vrai('ils sont portés en vigilance, avec leur motif',
+    enRisques.length === pfHauts.length,
+    enRisques.length + ' / ' + pfHauts.length);
+
+  // ══════════════════════════════════════════════ M7 — les non-mesurables
+  // `?? -1` les poussait en queue de tri : a l'ecran ils formaient une fin de
+  // classement qui ressemble a une mauvaise performance, alors que c'est une
+  // absence de mesure — ce que la regle N/D interdit partout ailleurs.
+  etape = 'M7 non-mesurables regroupés';
+  await js(`document.querySelector('[data-t="conf"]').click()`); await dodo(600);
+  const sansP = W.filter(w => w.conf == null).length;
+  vrai('les wallets sans probabilité sortent de l’ordre',
+    (await js(`SEP.n`)) === sansP && (await js(`SEP.i`)) > 0,
+    'SEP=' + JSON.stringify(await js(`SEP`)) + ' attendu n=' + sansP);
+  vrai('la partition mesurable / non mesurable est stricte',
+    await js(`courant.slice(0,SEP.i).every(w=>w.conf!=null)
+      && courant.slice(SEP.i).every(w=>w.conf==null)`), 'partition poreuse');
+  // Le separateur vit APRES le dernier wallet mesurable : sur 291 releves il
+  // faut derouler la liste entiere pour l'atteindre. Deux defilements n'y
+  // suffisaient pas, et le controle concluait a son absence.
+  for (let k = 0; k < 30 && (await js(`vus < courant.length`)); k++) {
+    await js(`window.scrollTo(0, document.body.scrollHeight)`);
+    await dodo(280);
+  }
+  vrai('toute la liste a été déroulée',
+    await js(`vus >= courant.length`),
+    await js(`vus + ' / ' + courant.length`));
+  vrai('un séparateur nommé les annonce',
+    await js(`(()=>{const s=document.querySelector('#liste .sep');
+      return !!s && /non mesurable/.test(s.textContent);})()`),
+    'aucun séparateur rendu');
+
+  // ══════════════════════════════════════════════ M8 — deux populations
+  etape = 'M8 observation, échantillon contre total';
+  await js(`document.querySelector('[data-f="disco"]').click()`); await dodo(600);
+  vrai('le filtre Observation annonce son dénominateur réel',
+    (await js(`document.getElementById('cntx').textContent`))
+      === String(META.discovery_total),
+    'dénominateur ' + await js(`document.getElementById('cntx').textContent`));
+  vrai('son libellé dit qu’il s’agit d’un échantillon',
+    /échantillon/.test(await js(`document.querySelector('[data-f="disco"]').textContent`)),
+    'libellé ambigu');
+
+  // ══════════════════════════════════════════════ M9 — les marques suivent
+  etape = 'M9 marques croisées';
+  await cmd('Page.navigate', { url: URL + '#/' });
+  await dodo(2200);
+  vrai('un wallet dormant est marqué partout où il apparaît',
+    await js(`[...document.querySelectorAll('#jour .li[data-a]')]
+      .every(l => !!l.querySelector('.mk.d') === ((byA[l.dataset.a].dort_j??0)>60))`),
+    'marque absente dans au moins une section');
+  vrai('un wallet fraîchement qualifié aussi',
+    await js(`[...document.querySelectorAll('#jour .li[data-a]')]
+      .every(l => !!l.querySelector('.mk.n') === (byA[l.dataset.a].promu != null))`),
+    'marque absente dans au moins une section');
+
   console.log('\n=== VERT (' + vert.length + ') ===');
   vert.forEach(v => console.log('  OK  ' + v));
   if (rouge.length) {

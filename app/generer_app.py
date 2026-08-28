@@ -82,6 +82,7 @@ TPL = r"""<title>HyperTracker</title>
   --texte:#E6EAED;
   --clair:#FBFCFD;          /* les mesures majeures                          */
   --gris:#6E8697;           /* echelle, incertitude, libelles                */
+  --mors:#6E8697;           /* TRAITS de l'instrument, jamais du texte       */
   --faible:#4C5D6B;         /* second plan                                   */
 
   /* --- UNE couleur. L'ambre ne designe QUE l'estimation ponctuelle : le
@@ -90,6 +91,7 @@ TPL = r"""<title>HyperTracker</title>
   --index:#F0A93B;
   --index-f:#33260F;
   --alerte:#D9705F;
+  --neuf:#7FB3A3;           /* qualifié récemment — une marque, pas un jugement */
 
   /* --- rythme : 4px, aucune valeur hors gamme --- */
   --e1:4px; --e2:8px; --e3:12px; --e4:16px; --e5:28px; --e6:44px;
@@ -157,11 +159,46 @@ header{position:sticky;top:0;z-index:60;background:rgba(11,14,17,.92);
 .r2{margin-top:var(--e2);font:400 11.5px/1.4 "Instrument Sans",sans-serif;
   color:var(--faible)}
 
+/* La bande d'equivalence est une AFFIRMATION, pas une decoration : a
+   l'interieur, la mesure ne permet pas de departager. Elle se lit donc comme un
+   titre de section, au meme rang que « Points forts ». */
+.bande{display:flex;align-items:baseline;gap:var(--e3);
+  padding:var(--e5) 0 var(--e2);border-bottom:1px solid var(--filet)}
+.bande .lab{color:var(--gris)}
+.bande .cpt{margin-left:auto;font:400 10px/1 "DM Mono",monospace;color:var(--faible)}
+
+/* Les non-mesurables ne sont pas derniers : ils sont hors de portee du critere.
+   Les laisser glisser en fin de tri les faisait passer pour de mauvais
+   resultats — exactement ce que la regle N/D interdit partout ailleurs. */
+.sep{padding:var(--e5) 0 var(--e3);border-top:1px dashed var(--filet);
+  border-bottom:1px solid var(--filet);margin-top:var(--e3)}
+.sep .lab{display:block;color:var(--gris);margin-bottom:var(--e2)}
+.sep p{margin:0;font:400 12.5px/1.5 "Instrument Sans",sans-serif;color:var(--faible)}
+
+/* Bouton d'ouverture INVISIBLE mais reel : il couvre la ligne, porte le libelle
+   destine aux lecteurs d'ecran et rend la ligne focalisable au clavier. Un
+   aria-label pose sur le conteneur REMPLACE son contenu pour ces memes
+   lecteurs — le nombre de trades, l'activite, la provenance et la description
+   du rail devenaient invisibles. */
+/* `.row` est deja positionne : le bouton se cale donc sur la LIGNE entiere, et
+   non sur la seule troisieme ligne de texte qui le contient dans le balisage. */
+.ouvr{position:absolute;inset:0;z-index:0;border:0;background:none;padding:0;
+  font:inherit;color:transparent;cursor:pointer}
+.ouvr:focus-visible{outline:1px solid var(--index);outline-offset:-2px}
+.row .arow{position:relative;z-index:1}
+
 /* --- provenance : un POINT, pas un badge. 262 badges identiques seraient du
        bruit ; seule l'exception — 5 wallets sur 267 — se marque. --- */
 .bg{flex:0 0 auto;font:400 9.5px/1.4 "DM Mono",monospace;letter-spacing:.1em;
   text-transform:uppercase;color:var(--faible)}
 .bg.obs{color:var(--index)}
+/* L'inactivite recoit la MEME force visuelle que la provenance : un signe, pas
+   une nuance de gris. Trois des quatre premiers du classement n'avaient pas
+   trade depuis 107 a 314 jours, et rien ne le disait au premier coup d'oeil. */
+.bg.dort{color:var(--alerte)}
+.bg.dort::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;
+  border:1px solid var(--alerte);margin-right:5px;vertical-align:middle}
+.bg.neuf{color:var(--neuf)}
 .bg.obs::before{content:"";display:inline-block;width:5px;height:5px;
   border-radius:50%;background:var(--index);margin-right:5px;vertical-align:middle}
 /* --- variation : un chevron, sans couleur. Le sens se lit a la forme. --- */
@@ -190,6 +227,33 @@ header{position:sticky;top:0;z-index:60;background:rgba(11,14,17,.92);
   min-height:36px}
 .chip.on{color:var(--clair);border-bottom-color:var(--index)}
 .chips .lab{flex:0 0 auto;align-self:center;padding-right:var(--e1)}
+
+/* LE VERDICT AU-DESSUS DE LA LISTE, dans la meme graisse que le premier score.
+   Il vivait dans un onglet voisin et un pied de page en 10 px pendant que
+   l'accueil deroulait 291 lignes ordonnees et un grand chiffre ambre. Non
+   refermable : ce n'est pas une notification, c'est une condition de lecture. */
+.vbn{margin:var(--e2) 0 0;padding:var(--e4) var(--marge-d) var(--e4) var(--marge);
+  border-top:1px solid var(--alerte);border-bottom:1px solid var(--filet);
+  background:var(--creux)}
+.vbt{font:600 17px/1.25 Archivo,sans-serif;letter-spacing:.02em;color:var(--alerte)}
+.vbn p{margin:var(--e2) 0 0;font:400 13px/1.55 "Instrument Sans",sans-serif;
+  color:var(--gris)}
+.vbn p.vbs{font:400 11px/1.5 "DM Mono",monospace;color:var(--faible)}
+
+/* « Voir les 89 » : un total affiche sans moyen d'y acceder n'est qu'un chiffre
+   de plus. */
+.tout{display:block;width:100%;margin-top:var(--e3);padding:var(--e3) 0;
+  background:none;border:0;border-bottom:1px solid var(--filet);cursor:pointer;
+  text-align:left;font:400 12px/1.4 "Instrument Sans",sans-serif;color:var(--gris);
+  min-height:44px}
+.tout::after{content:" →"}
+
+/* Marques reportees d'une section a l'autre : un wallet fraichement qualifie et
+   deja dormant est l'information la plus interessante de l'ecran ; elle etait
+   eparpillee sur deux listes distantes de 400 px. */
+.mk{flex:0 0 auto;font:400 12px/1 "DM Mono",monospace;padding:0 2px}
+.mk.d{color:var(--alerte)}
+.mk.n{color:var(--neuf)}
 
 .btn{flex:0 0 auto;background:none;border:1px solid var(--filet);border-radius:1px;
   color:var(--gris);padding:var(--e3) var(--e4);cursor:pointer;
@@ -365,6 +429,7 @@ nav button.on::before{content:"";position:absolute;top:0;left:50%;
   <div id="jband"></div><div class="wrap" id="jour"></div></section>
 
 <section class="view" id="v-rank" role="region" aria-label="Classement">
+  <div id="verdict"></div>
   <div class="conv" id="conv" role="group" aria-label="Qualité des données"></div>
   <div class="wrap">
     <div class="srch" id="sbox">
@@ -422,6 +487,16 @@ const usdb = v => v == null ? NA : '$' + Math.abs(v).toLocaleString('fr-FR',
   {maximumFractionDigits: Math.abs(v) >= 10 ? 0 : 2});
 const pc = (v, d = 0) => v == null ? NA : v.toFixed(d) + ' %';
 const court = a => a.slice(0, 6) + '…' + a.slice(-4);
+/* Les textes du moteur sont des fragments d'audit : ils ne se terminent pas par
+   un point et se collaient a la phrase suivante. */
+const phrase = t => { const x = String(t || '').trim();
+  return x && !/[.!?]$/.test(x) ? x + '.' : x; };
+/* Les messages du cycle citent les classes en clair machine — « qualifié —
+   EXCELLENT_CANDIDATE, rang 44 ». C'est la bonne trace dans un journal ; a
+   l'ecran, c'est un mot que personne ne parle. */
+const humaniser = t => String(t || '').replace(
+  /\b(EXCELLENT_CANDIDATE|PROMISING|INSUFFICIENT_DATA|REJECTED|RANKED|DISCOVERY|ARCHIVED)\b/g,
+  m => CLASSES[m] || ETIQ[m] || m);
 const date = t => t ? new Date(t).toLocaleDateString('fr-FR',
   {day: '2-digit', month: 'short', year: '2-digit'}) : NA;
 const dateh = t => t ? new Date(t).toLocaleString('fr-FR',
@@ -478,6 +553,39 @@ const TRAIT = { elevee: '', moyenne: '3 2', faible: '1 3' };
    et non une donnee mesuree. Nommees plutot qu'ecrites en clair : l'audit
    d'authenticite refuse tout nombre litteral dans le gabarit. */
 const ECHELLE = [0, 100];
+
+/* ── M2. UN CHIFFRE N'EST JAMAIS PLUS PRECIS QUE SON INTERVALLE.
+   La largeur mediane de l'IC vaut 56 points sur une echelle de 100 : ecrire
+   « 98,1 » sur un intervalle [64–100] annonce un dixieme de point la ou la
+   mesure ne porte pas dix points. Au-dela de vingt points de largeur, le
+   dixieme disparait — ce n'est pas une perte d'information, c'est le retrait
+   d'une information qui n'existait pas. */
+const IC_LARGE = 20;
+const scoreTxt = w => (w.ic[1] - w.ic[0]) > IC_LARGE
+  ? String(Math.round(w.score)) : w.score.toFixed(1);
+
+/* ── M3. LA SATURATION N'EST PAS UNE CERTITUDE.
+   « IC 100–100 » etait le seul endroit de l'application pretendant a une
+   certitude parfaite — et c'est un artefact : l'echelle est bornee, les deux
+   bornes de l'intervalle ont ete ecrasees dessus. Le dire est la seule lecture
+   honnete ; l'afficher comme un intervalle mesure ne l'est pas. */
+const satHaut = w => w.ic[1] >= ECHELLE[1];
+const satBas  = w => w.ic[0] <= ECHELLE[0];
+function icCourt(w) {
+  if (w.ic[0] === w.ic[1]) return w.ic[0] + ' · borne';
+  return (satBas(w) ? '≤' : '') + w.ic[0] + '–' + (satHaut(w) ? '≥' : '') + w.ic[1];
+}
+function icLong(w) {
+  if (w.ic[0] === w.ic[1]) {
+    return w.ic[0] + ' — borne de l’échelle, pas une mesure';
+  }
+  const notes = [];
+  if (satBas(w)) notes.push('bas saturé');
+  if (satHaut(w)) notes.push('haut saturé');
+  return w.ic[0] + '–' + w.ic[1] + (notes.length ? ' · ' + notes.join(', ') : '');
+}
+/* Bande d'equivalence : a l'interieur, rien ne permet de departager. */
+const bande = w => 'G' + String(w.groupe).padStart(2, '0');
 const RW = 300, RH = 26, RP_ = 7;
 
 function rail(w) {
@@ -490,16 +598,23 @@ function rail(w) {
   p.push(`<line x1="${X(0)}" y1="${y}" x2="${X(100)}" y2="${y}" stroke="var(--filet)" stroke-width="1"/>`);
   const a = X(w.ic[0]), b = X(w.ic[1]), dash = TRAIT[w.conf_lab] ?? '';
   const da = dash ? ` stroke-dasharray="${dash}"` : '';
-  p.push(`<line x1="${a}" y1="${y - 6}" x2="${b}" y2="${y - 6}" stroke="var(--gris)" stroke-width="1"${da}/>`);
-  p.push(`<line x1="${a}" y1="${y - 9}" x2="${a}" y2="${y - 3}" stroke="var(--gris)" stroke-width="1"/>`);
-  p.push(`<line x1="${b}" y1="${y - 9}" x2="${b}" y2="${y - 3}" stroke="var(--gris)" stroke-width="1"/>`);
+  p.push(`<line x1="${a}" y1="${y - 6}" x2="${b}" y2="${y - 6}" stroke="var(--mors)" stroke-width="1"${da}/>`);
+  /* MORS FERME = borne mesuree. MORS OUVERT = borne de l'echelle atteinte : ce
+     cote de l'intervalle n'a pas ete mesure, il a ete ecrase. Dessiner un mors
+     ferme sur une saturation revient a dessiner une certitude qui n'existe pas. */
+  const machoire = (x, ouvert, sens) => ouvert
+    ? `<path d="M${x - sens * 4} ${y - 10} L${x} ${y - 6} L${x - sens * 4} ${y - 2}"
+         fill="none" stroke="var(--mors)" stroke-width="1"/>`
+    : `<line x1="${x}" y1="${y - 9}" x2="${x}" y2="${y - 3}" stroke="var(--mors)" stroke-width="1"/>`;
+  p.push(machoire(a, satBas(w), -1));
+  p.push(machoire(b, satHaut(w), 1));
   const x = X(w.score);
   p.push(`<line x1="${x}" y1="${y - 12}" x2="${x}" y2="${y + 5}" stroke="var(--index)" stroke-width="1"/>`);
   p.push(`<path d="M${x - 2.8} ${y - 12} L${x + 2.8} ${y - 12} L${x} ${y - 8.4} Z" fill="var(--index)"/>`);
   return `<svg class="rail" viewBox="0 0 ${RW} ${RH}" role="img"
-    aria-label="Score ${w.score.toFixed(1)} sur ${ECHELLE[1]}. Intervalle de crédibilité
-    ${w.ic[0]} à ${w.ic[1]}, largeur ${w.ic[1] - w.ic[0]}. Qualité des données
-    ${w.conf_lab}.">${p.join('')}</svg>`;
+    aria-label="Score ${scoreTxt(w)} sur ${ECHELLE[1]}, bande d’équivalence ${bande(w)}.
+    Intervalle de crédibilité ${icLong(w)}, largeur ${w.ic[1] - w.ic[0]}.
+    Qualité des données ${w.conf_lab}. ${w.n} trades, ${activite(w)}.">${p.join('')}</svg>`;
 }
 
 /* ════════════════════════════════════════════════════════ marques
@@ -507,8 +622,20 @@ function rail(w) {
    n'informeraient personne. Seule l'exception se marque. */
 const estObs = w => !!w.obs;
 const marqueProv = w => estObs(w)
-  ? '<span class="bg obs" title="confronté à une donnée native HyperTracker">Observé</span>'
+  ? '<span class="bg obs" title="confronté à une donnée native de la source HyperTracker">Observé</span>'
   : '';
+/* ── M5. Trois des quatre premiers du classement n'avaient pas trade depuis 107
+   a 314 jours. L'information existait — troisieme ligne, 11,5 px, dans la
+   couleur la moins contrastee de la palette — pendant que le grand chiffre
+   ambre disait « meilleur ». Le score ne penalise pas la mort d'un wallet ;
+   c'est a l'ecran de ne pas la taire. Meme force visuelle que « Observé ». */
+const DORT_J = 60;
+const dormant = w => (w.dort_j ?? 0) > DORT_J;
+const marqueDormant = w => dormant(w)
+  ? `<span class="bg dort" title="aucun trade clos depuis ${Math.round(w.dort_j)} jours">Dormant</span>`
+  : '';
+const marqueNeuf = w => w.promu != null
+  ? '<span class="bg neuf" title="qualifié récemment">Nouveau</span>' : '';
 /* La variation se lit au CHEVRON, sans couleur : le vert et le rouge sont
    sortis de la liste pour que l'ambre de l'index reste le seul signal. */
 function marqueVar(w) {
@@ -545,15 +672,21 @@ function activite(w) {
    neuf autres ne sont pas perdues — elles sont sur la fiche, ou on les lit
    vraiment plutot que de les balayer. */
 function ligne(w) {
-  return `<article class="row" role="listitem" data-a="${w.a}" tabindex="0"
-      aria-label="Rang ${w.rang}, score ${w.score.toFixed(1)}. Ouvrir la fiche.">
+  /* Pas d'aria-label sur le conteneur : il REMPLACE le contenu pour un lecteur
+     d'ecran, et effacait le nombre de trades, l'activite, la provenance et la
+     description du rail — soigneusement redigee, jamais lue. Le libelle vit sur
+     le bouton d'ouverture ; le reste de la ligne redevient lisible. */
+  return `<article class="row" role="listitem" data-a="${w.a}">
     <div class="r0">
-      <span class="no">${String(w.rang).padStart(3, '0')}</span>
+      <span class="no" title="bande d’équivalence : à l’intérieur, rien ne départage">${bande(w)}</span>
       <span class="adr">${court(w.a)}</span>
-      <span class="fin">${marqueVar(w)}${marqueProv(w)}</span>
+      <span class="fin">${marqueVar(w)}${marqueDormant(w)}${marqueProv(w)}</span>
     </div>
-    <div class="r1"><span class="sc">${w.score.toFixed(1)}</span>${rail(w)}</div>
-    <div class="r2">${w.n} trades · ${esc(activite(w))}</div>
+    <div class="r1"><span class="sc">${scoreTxt(w)}</span>${rail(w)}</div>
+    <div class="r2">${w.n} trades · ${esc(activite(w))}
+      <button class="ouvr" data-a="${w.a}" aria-label="Ouvrir la fiche de ${court(w.a)},
+        score ${scoreTxt(w)}, bande ${bande(w)}, intervalle ${icLong(w)}">Ouvrir</button>
+    </div>
   </article>`;
 }
 
@@ -561,7 +694,16 @@ function ligne(w) {
    Chaque cle pointe une grandeur REELLEMENT presente. Aucune n'est composee a
    la volee : trier sur une grandeur inventee afficherait un classement qui
    n'existe pas. */
+/* Le champ REELLEMENT mesure par chaque tri. Null = le tri porte sur une
+   grandeur toujours presente. Sert a sortir les non-mesurables de la liste
+   plutot qu'a les ranger en queue, ou ils ressemblent a de mauvais resultats
+   alors qu'ils sont une absence de mesure. */
+const CLE_MESURE = { conf: 'conf', drang: 'drang', stab: 'stab', dd: 'dd',
+  conc: 'conc', recent: 't1', actif: 'r30' };
 const TRIS = [
+  // Le score ignore la fraicheur par construction : le tri par defaut ne doit
+  // donc pas presenter un wallet mort depuis un an comme « le meilleur ».
+  ['score_a', 'Score · actifs', (a, b) => (dormant(a) - dormant(b)) || (b.score - a.score)],
   ['score',  'Score',         (a, b) => b.score - a.score],
   ['actif',  'Activité',      (a, b) => (b.r30 ?? 0) - (a.r30 ?? 0)],
   ['conf',   'Probabilité',   (a, b) => (b.conf ?? -1) - (a.conf ?? -1)],
@@ -576,6 +718,7 @@ const TRIS = [
 ];
 const FILTRES = [
   ['ranked', 'Classés',        w => w.st === 'RANKED'],
+  ['dormant','Dormants',       w => dormant(w)],
   ['tous',   'Tous',           () => true],
   ['actif',  'Actifs 30 j',    w => (w.r30 ?? 0) > 0],
   ['neuf',   'Nouveaux',       w => w.promu != null],
@@ -584,12 +727,19 @@ const FILTRES = [
   ['q1',     'Qualité faible', w => w.conf_lab === 'faible'],
   ['obs',    'Observé',        w => estObs(w)],
   ['suivi',  'Suivis',         w => suit(w.a)],
-  ['disco',  'Observation',    w => w.st === 'DISCOVERY'],
+  // « échantillon » : ce filtre ne peut montrer que les wallets EMBARQUES dans
+  // la page. L'onglet Données en annonce 31 505 en observation — deux
+  // populations, un seul mot, un facteur 560.
+  ['disco',  'Observation (échantillon)', w => w.st === 'DISCOVERY'],
 ];
 
-const ETAT = S.get('etat', { tri: 'score', filtre: 'ranked', q: '' });
+const ETAT = S.get('etat', { tri: 'score_a', filtre: 'ranked', q: '' });
 if (ETAT.filtre === 'ranked' && !W.some(w => w.st === 'RANKED')) ETAT.filtre = 'tous';
 const SCROLL = {};
+
+/* Position du separateur des non-mesurables dans `courant`, et grandeur
+   concernee. -1 quand tout le monde est mesurable sur le critere courant. */
+let SEP = { i: -1, n: 0, cle: null };
 
 function selection() {
   const f = (FILTRES.find(x => x[0] === ETAT.filtre) || FILTRES[1])[2];
@@ -597,24 +747,66 @@ function selection() {
   let r = W.filter(f);
   if (q) r = r.filter(w => w.a.toLowerCase().indexOf(q) >= 0
                         || (w.coins || []).some(c => c.toLowerCase().indexOf(q) >= 0));
-  return r.sort((TRIS.find(x => x[0] === ETAT.tri) || TRIS[0])[2]);
+  const cmp = (TRIS.find(x => x[0] === ETAT.tri) || TRIS[0])[2];
+  /* ── M7. Les valeurs manquantes etaient triees EN SILENCE, poussees en queue
+     par `?? -1`. A l'ecran elles formaient une fin de classement qui ressemble a
+     une mauvaise performance, alors que c'est une absence de mesure — exactement
+     ce que la regle N/D interdit partout ailleurs. On les sort de l'ordre. */
+  const cle = CLE_MESURE[ETAT.tri];
+  if (!cle) { SEP = { i: -1, n: 0, cle: null }; return r.sort(cmp); }
+  const mesurables = r.filter(w => w[cle] != null).sort(cmp);
+  const absents = r.filter(w => w[cle] == null).sort((a, b) => b.score - a.score);
+  SEP = absents.length ? { i: mesurables.length, n: absents.length, cle: ETAT.tri }
+                       : { i: -1, n: 0, cle: null };
+  return mesurables.concat(absents);
 }
 
 /* Revelation progressive : chaque releve porte un rail SVG ; les poser tous
    d'un coup fige le premier rendu. */
 const PAGE = 24;
-let vus = 0, courant = [];
+let vus = 0, courant = [], BANDES = {};
 
 function rendu(reset) {
   const el = document.getElementById('liste');
-  if (reset) { vus = 0; courant = selection(); el.innerHTML = ''; }
+  if (reset) {
+    vus = 0; courant = selection(); el.innerHTML = '';
+    // Effectif de chaque bande DANS LA SELECTION COURANTE, en une passe. Le
+    // calculer par ligne revenait a rebalayer la liste 291 fois.
+    BANDES = {};
+    const fin = SEP.i < 0 ? courant.length : SEP.i;
+    for (let i = 0; i < fin; i++) BANDES[courant[i].groupe] = (BANDES[courant[i].groupe] || 0) + 1;
+  }
   if (!courant.length) {
     el.innerHTML = `<div class="empty"><div class="lab">Aucun résultat</div>
       <p>Aucun wallet ne satisfait ce filtre.</p></div>`;
     majCompteur(); return;
   }
   const lot = courant.slice(vus, vus + PAGE);
-  el.insertAdjacentHTML('beforeend', lot.map(ligne).join(''));
+  /* Deux insertions structurelles dans le flux des releves :
+       - le separateur des non-mesurables (M7), a une position connue ;
+       - le changement de bande d'equivalence (M2), quand la liste est ordonnee
+         par score — sous un autre tri les bandes s'entrelacent et la marque
+         par ligne suffit. */
+  const parScore = ETAT.tri === 'score' || ETAT.tri === 'score_a';
+  const NOM_TRI = Object.fromEntries(TRIS.map(x => [x[0], x[1]]));
+  let html = '';
+  for (let k = 0; k < lot.length; k++) {
+    const g = vus + k, w = lot[k];
+    if (g === SEP.i) {
+      html += `<div class="sep"><span class="lab">${SEP.n} wallet${SEP.n > 1 ? 's' : ''}
+        non mesurable${SEP.n > 1 ? 's' : ''} sur « ${esc(NOM_TRI[SEP.cle] || SEP.cle)} »</span>
+        <p>Ils ne sont pas derniers : ils sont hors de portée de ce critère. Les
+        classer avec les autres les ferait passer pour de mauvais résultats.</p></div>`;
+    }
+    if (parScore && (k === 0 || lot[k - 1].groupe !== w.groupe) &&
+        (g === 0 || courant[g - 1].groupe !== w.groupe) && (SEP.i < 0 || g < SEP.i)) {
+      const n = BANDES[w.groupe] || 0;
+      html += `<div class="bande"><span class="lab">Bande ${bande(w)}</span>
+        <span class="cpt">${n} indiscernables</span></div>`;
+    }
+    html += ligne(w);
+  }
+  el.insertAdjacentHTML('beforeend', html);
   vus += lot.length;
   const f = el.querySelector('.fin-l'); if (f) f.remove();
   if (vus >= courant.length) {
@@ -627,6 +819,11 @@ function rendu(reset) {
 function majCompteur() {
   const c = document.getElementById('cnt');
   if (c) c.textContent = String(courant.length);
+  /* M8. Le denominateur change avec le filtre : « Observation » ne peut montrer
+     que les wallets EMBARQUES, quand l'onglet Données en annonce 31 505. */
+  const x = document.getElementById('cntx');
+  if (x) x.textContent = ETAT.filtre === 'disco'
+    ? String(META.discovery_total ?? META.n) : String(META.n);
 }
 /* Le reordonnancement du suivi n'apparait QUE dans le filtre « Suivis » : une
    commande qui ne sert que la n'a pas a peser sur les 267 autres releves. */
@@ -879,6 +1076,10 @@ function cellule(k, v, u) {
     <span class="cell-v">${v}${u ? ` <span class="cell-u">${u}</span>` : ''}</span></div>`;
 }
 const pairs = w => W.filter(x => x.conf_lab === w.conf_lab).length;
+/* L'erreur type vient de ht.scoring (Mertens, corrigee asymetrie/kurtosis).
+   Aucun calcul ici : on affiche ce que le moteur a produit. */
+const srTxt = w => w.se == null ? nb(w.sr, 2)
+  : `${nb(w.sr, 2)} <span class="cell-u">± ${nb(w.se, 2)}</span>`;
 
 /* Le Sharpe brut et celui que le modele retient ne sont pas deux chiffres a
    comparer de tete : c'est UN deplacement sur une echelle. */
@@ -901,12 +1102,14 @@ function retrecissement(w) {
           font-family="DM Mono, monospace" text-anchor="middle"
           >${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(3)}</text>`);
   return `<svg viewBox="0 0 ${L} ${H}" style="display:block;width:100%;height:auto" role="img"
-    aria-label="Sharpe brut ${w.sr.toFixed(4)} ramené à ${w.post.toFixed(4)}">${p.join('')}</svg>`;
+    aria-label="Sharpe brut ${w.sr.toFixed(2)} plus ou moins ${w.se == null ? 'inconnu' :
+      w.se.toFixed(2)}, ramené à ${w.post.toFixed(2)}">${p.join('')}</svg>`;
 }
 
 function cycleVie(w) {
   const h = w.histo || [];
   const t = `<div class="cmp" style="grid-template-columns:minmax(0,1fr) auto">
+      <div class="k">Rang exact</div><div>${String(w.rang).padStart(3, '0')} / ${META.n}</div>
       <div class="k">Statut</div><div>${w.st ? esc(ETIQ[w.st] || w.st) : NA}</div>
       <div class="k">Qualification</div><div>${w.classe ? esc(CLASSES[w.classe] || w.classe) : NA}</div>
       <div class="k">Découvert via</div><div>${w.src ? esc(w.src) : NA}</div>
@@ -964,8 +1167,9 @@ function fiche(w) {
   return `
   <div class="wh">
     <div class="r0">
-      <span class="no">${String(w.rang).padStart(3, '0')} / ${META.n}</span>
-      <span class="fin">${marqueVar(w)}${marqueProv(w)}
+      <span class="no" title="bande d’équivalence">${bande(w)} · ${
+        W.filter(x => x.groupe === w.groupe).length} indiscernables</span>
+      <span class="fin">${marqueVar(w)}${marqueDormant(w)}${marqueProv(w)}
         <span class="bg">${esc(ETIQ[w.st] || 'N/D')}</span></span>
     </div>
     <div style="height:14px"></div>
@@ -983,15 +1187,19 @@ function fiche(w) {
       <div style="display:flex;gap:20px;align-items:flex-start">
         <div style="flex:1">
           <div class="lab">Performance</div>
-          <div class="big">${w.score.toFixed(1)}</div>
+          <div class="big">${scoreTxt(w)}</div>
           ${rail(w)}
         </div>
         <div style="flex:0 0 44px;height:132px"><canvas id="cad" aria-hidden="true"
           style="width:44px;height:100%"></canvas></div>
       </div>
       <div class="mini">
-        <div class="kv"><span>Incertitude</span><b>${w.ic[0]}–${w.ic[1]}</b></div>
+        <div class="kv"><span>Incertitude</span><b>${icLong(w)}</b></div>
         <div class="kv"><span>Largeur de l’IC</span><b>${larg}</b></div>
+        <div class="kv"><span>Bande d’équivalence</span><b>${bande(w)} · ${
+          W.filter(x => x.groupe === w.groupe).length} wallets</b></div>
+        <div class="kv"><span>Rang exact</span><b>${String(w.rang).padStart(3, '0')}${
+          w.exaequo > 1 ? ' =' : ''} / ${META.n}</b></div>
         <div class="kv"><span>Probabilité calibrée</span><b>${w.conf == null ? 'N/D' : w.conf + ' %'}</b></div>
         <div class="kv"><span>Qualité des données</span><b>${esc(QL[w.conf_lab] || w.conf_lab)}</b></div>
         <div class="vern" role="img" aria-label="Qualité ${w.qualite} sur 3 critères">
@@ -999,6 +1207,15 @@ function fiche(w) {
         </div>
         <p class="apparat">${pairs(w)} des ${META.n} wallets partagent cette réserve.</p>
       </div>
+      ${larg === 0 ? `<p class="note"><b>L’intervalle est de largeur nulle parce que
+        l’échelle est bornée</b>, pas parce que la mesure est certaine : ses deux bornes
+        ont été écrasées sur ${w.ic[0]}. C’est le seul endroit où ce produit pourrait
+        laisser croire à une certitude parfaite — il n’en a aucune.</p>` : ''}
+      ${w.exaequo > 1 ? `<p class="note">${w.exaequo} wallets partagent exactement ce
+        score. Le départage qui leur donne des rangs distincts est arbitraire.</p>` : ''}
+      ${dormant(w) ? `<p class="note"><b>Wallet dormant</b> — aucun trade clos depuis
+        ${jours(w.dort_j)}. Le score ne pénalise pas l’inactivité : il décrit une
+        performance passée, pas une activité présente.</p>` : ''}
       ${w.conf == null ? `<p class="note">La probabilité calibrée n'existe pas pour ce
         wallet : le modèle de recalibrage n'a pas été conservé, il ne peut donc pas
         s'appliquer à un wallet apparu depuis. Elle reste N/D plutôt qu'approchée.</p>` : ''}
@@ -1019,8 +1236,8 @@ function fiche(w) {
     <div id="reste" hidden>
       <div class="sect"><span class="lab">Mesures</span></div>
       <div class="grid">
-        ${cellule('Sharpe / trade', nb(w.sr, 4))}
-        ${cellule('Sharpe retenu', nb(w.post, 4))}
+        ${cellule('Sharpe / trade', srTxt(w))}
+        ${cellule('Sharpe retenu', nb(w.post, 2))}
         ${cellule('PnL net', usd(w.pnl))}
         ${cellule('Drawdown max', usdb(w.dd))}
         ${cellule('Trades clos', String(w.n))}
@@ -1052,8 +1269,9 @@ function fiche(w) {
 
       <div class="sect"><span class="lab">Rétrécissement</span></div>
       <div class="well">${retrecissement(w)}
-        <div class="wleg"><span>Sharpe brut ${nb(w.sr, 4)}</span>
-          <span>Retenu ${nb(w.post, 4)}</span></div></div>
+        <div class="wleg"><span>Sharpe brut ${nb(w.sr, 2)}${
+        w.se == null ? '' : ' ± ' + nb(w.se, 2)}</span>
+          <span>Retenu ${nb(w.post, 2)}</span></div></div>
       <p class="note">Un échantillon mince est ramené vers la moyenne de la population :
         c'est ce déplacement, et non le chiffre brut, qui fonde le score.</p>
 
@@ -1168,16 +1386,23 @@ function ligneC(a, extra) {
   const w = byA[a];
   if (!w) return `<div class="li" style="cursor:default"><span class="adr">${court(a)}</span>
     <span class="rt">${extra || NA}</span></div>`;
+  const mk = (dormant(w) ? '<span class="mk d" title="dormant">◦</span>' : '')
+           + (w.promu != null ? '<span class="mk n" title="qualifié récemment">+</span>' : '');
   return `<div class="li" data-a="${w.a}" role="button" tabindex="0"
-      aria-label="Rang ${w.rang}, score ${w.score.toFixed(1)}. Ouvrir la fiche.">
-    <span class="no">${String(w.rang).padStart(3, '0')}</span>
+      aria-label="${bande(w)}, score ${scoreTxt(w)}, intervalle ${icLong(w)}${
+        dormant(w) ? ', dormant depuis ' + jours(w.dort_j) : ''}. Ouvrir la fiche.">
+    <span class="no">${bande(w)}</span>
     <span class="adr">${court(w.a)}</span>
-    <span class="sc2">${w.score.toFixed(1)}</span>
+    <span class="sc2">${scoreTxt(w)}</span>${mk}
     <span class="rt">${extra || ''}</span></div>`;
 }
-function sectionL(t, lignes, n, note) {
+function sectionL(t, lignes, n, note, total, lien) {
+  const reste = (total || 0) - lignes.length;
   return `<div class="sect"><span class="lab">${t}</span>${
-    n ? `<span class="cpt">${n}</span>` : ''}</div>${lignes.join('')}${
+    n ? `<span class="cpt">${total && total > lignes.length
+      ? lignes.length + ' / ' + total : total || n}</span>` : ''}</div>${lignes.join('')}${
+    reste > 0 && lien ? `<button class="tout" data-f="${lien.filtre}" data-tri="${
+      lien.tri || 'score_a'}">Voir les ${total} — ${reste} de plus</button>` : ''}${
     note ? `<p class="note">${note}</p>` : ''}`;
 }
 /* CE QUI A CHANGE D'ABORD. Un accueil qui empile quatre paragraphes « rien a
@@ -1186,7 +1411,8 @@ function sectionL(t, lignes, n, note) {
 function sections(defs) {
   const pleines = defs.filter(d => d.lignes.length);
   const vides = defs.filter(d => !d.lignes.length);
-  let h = pleines.map(d => sectionL(d.t, d.lignes, d.lignes.length, d.note)).join('');
+  let h = pleines.map(d => sectionL(d.t, d.lignes, d.lignes.length, d.note,
+    d.total ?? d.lignes.length, d.lien)).join('');
   if (vides.length) {
     h += `<div class="sect"><span class="lab">Rien à signaler</span>
       <span class="cpt">${vides.length}</span></div>` + vides.map(d =>
@@ -1201,16 +1427,23 @@ function rendJour() {
   if (!DAILY) {
     bd.innerHTML = '';
     el.innerHTML = `<div class="empty"><div class="lab">Aucun cycle exécuté</div>
-      <p>Le cycle du matin n'a pas encore tourné. Lancez
-      <span class="mo">python -m ht.matin</span>, ou attendez 08:00.</p></div>`;
+      <p>Aucun relevé disponible pour cette date. Cette page est un instantané :
+      elle affichera le prochain cycle dès qu'il aura été publié.</p></div>`;
     return;
   }
   const d = DAILY, h = d.data_health || {}, sy = d.system_health || {};
-  const dormants = W.filter(w => w.st === 'RANKED' && (w.dort_j ?? 0) > 60)
-    .sort((a, b) => b.dort_j - a.dort_j).slice(0, 6);
-  const top = W.filter(w => w.st === 'RANKED').slice(0, 6);
-  const qualif = W.filter(w => w.promu != null)
-    .sort((a, b) => (b.promu || 0) - (a.promu || 0)).slice(0, 6);
+  /* Le compteur de section affichait la longueur de la TRANCHE : « Dormants 6 »
+     quand il y en a 89, soit 42 % des wallets classés. Sous-déclarer un risque
+     par un effet de découpage est la faute la plus grave de cet écran. Chaque
+     section porte donc son TOTAL, et un lien vers la population entière. */
+  const tousDorm = W.filter(w => w.st === 'RANKED' && dormant(w))
+    .sort((a, b) => b.dort_j - a.dort_j);
+  const tousTop = W.filter(w => w.st === 'RANKED');
+  const tousQualif = W.filter(w => w.promu != null)
+    .sort((a, b) => (b.promu || 0) - (a.promu || 0));
+  const dormants = tousDorm.slice(0, 6);
+  const top = tousTop.slice(0, 6);
+  const qualif = tousQualif.slice(0, 6);
 
   bd.innerHTML = `<div class="band">
     <div><div class="lab">Classés</div><div class="v">${h.ranked ?? META.n}</div></div>
@@ -1226,30 +1459,31 @@ function rendJour() {
     ${d.prochaine_action ? `<p class="note"><b>Prochaine action</b> — ${esc(d.prochaine_action)}</p>` : ''}
     ${sections([
       { t: 'Nouveaux qualifiés',
-        lignes: (d.new_ranked || []).map(x => ligneC(x.a, esc(x.message))),
+        lignes: (d.new_ranked || []).map(x => ligneC(x.a, esc(humaniser(x.message)))),
         vide: 'Aucun wallet n' + APO + 'a franchi les critères ce cycle. Une découverte ' +
               'n' + APO + 'est pas une qualification : il faut ' +
               `${META.seuil_trades} trades clos, ${META.seuil_jours} jours ` +
               `d${APO}historique et une concentration sous ` +
               META.seuil_conc.toLocaleString('fr-FR', {minimumFractionDigits: 2}) + '.' },
       { t: 'En hausse',
-        lignes: (d.top_movers || []).map(x => ligneC(x.a, '↑ ' + esc(x.message))),
+        lignes: (d.top_movers || []).map(x => ligneC(x.a, '↑ ' + esc(humaniser(x.message)))),
         vide: 'Aucun mouvement de position notable. Une alerte de rang exige un déplacement ' +
               'de position relative : la seule arrivée de nouveaux wallets ne la déclenche pas.' },
       { t: 'En baisse',
-        lignes: (d.declining || []).map(x => ligneC(x.a, '↓ ' + esc(x.message))),
+        lignes: (d.declining || []).map(x => ligneC(x.a, '↓ ' + esc(humaniser(x.message)))),
         vide: 'Aucune baisse de position notable.' },
       { t: 'Sorties',
-        lignes: (d.archived || []).map(x => ligneC(x.a, esc(x.raison || ''))),
+        lignes: (d.archived || []).map(x => ligneC(x.a, esc(humaniser(x.raison || '')))),
         vide: 'Aucun retrait. Un wallet n\u2019est retiré que sur un critère réellement ' +
               'réfuté, jamais sur une donnée simplement manquante.' },
       { t: 'Retours au classement',
-        lignes: (d.reactivated || []).map(x => ligneC(x.a, esc(x.message))),
+        lignes: (d.reactivated || []).map(x => ligneC(x.a, esc(humaniser(x.message)))),
         vide: 'Aucun retour. Un wallet archivé revient uniquement s' + APO + 'il repasse les critères.' },
       // « Candidats du dernier cycle », PAS « En observation » : ce mot désigne
       // ailleurs les 31 505 wallets de l'état DISCOVERY. Deux populations sous un
       // même mot, sur le même écran, ne se distinguent plus.
       { t: 'Candidats du dernier cycle',
+        total: (d.watch || []).length,
         lignes: (d.watch || []).slice(0, 8).map(x => ligneC(x.a,
           esc((x.manque || [])[0] ? critere(x.manque[0])
                                   : (CLASSES[x.classe] || x.classe || '')))),
@@ -1258,12 +1492,18 @@ function rendJour() {
               `et ${META.seuil_trades} trades clos.`,
         vide: 'Aucun candidat proche des critères ce cycle.' },
       { t: 'Récemment qualifiés',
+        total: tousQualif.length,
+        lien: { filtre: 'neuf', tri: 'recent' },
         lignes: qualif.map(w => ligneC(w.a, date(w.promu * 1000))),
         vide: 'Aucune qualification datée : le champ n\u2019existe que depuis le registre.' },
       { t: 'Dormants',
+        total: tousDorm.length,
+        lien: { filtre: 'dormant', tri: 'recent' },
         lignes: dormants.map(w => ligneC(w.a, 'dernier trade ' + jours(w.dort_j))),
         vide: 'Aucun wallet classé n\u2019est dormant depuis plus de deux mois.' },
       { t: 'Tête du classement',
+        total: tousTop.length,
+        lien: { filtre: 'ranked', tri: 'score_a' },
         lignes: top.map(w => ligneC(w.a, usd(w.pnl) + ' cumulé')),
         vide: 'Classement indisponible.' },
     ])}
@@ -1278,6 +1518,17 @@ function rendJour() {
 
 /* ════════════════════════════════════════════════════════ donnees
    Le produit doit rendre visible QUAND IL NE SAIT PAS. */
+/* Un total affiche sans moyen d'y acceder n'est qu'un chiffre de plus. Le lien
+   bascule vers le classement avec le filtre et le tri qui montrent EXACTEMENT
+   la population que la section vient d'annoncer. */
+document.addEventListener('click', e => {
+  const b = e.target.closest('.tout'); if (!b) return;
+  ETAT.filtre = b.dataset.f; ETAT.tri = b.dataset.tri || 'score_a'; ETAT.q = '';
+  S.set('etat', ETAT); SCROLL['/rank'] = 0;
+  convention(); chips(); recherche(); rendu(true);
+  location.hash = '#/rank';
+});
+
 function rendData() {
   const d = DAILY || {}, h = d.data_health || {}, sy = d.system_health || {};
   const q = h.quota || {};
@@ -1382,15 +1633,16 @@ function entete(r, w) {
   if (r === '/w') {
     hd.innerHTML = `<button class="btn" id="bk" aria-label="Retour">← Retour</button>
       <span class="htitle" style="text-align:right"><h1 style="font-size:12px;letter-spacing:.14em"
-        >${w ? String(w.rang).padStart(3, '0') : 'Wallet'}</h1>
-      <p>${w ? 'score ' + w.score.toFixed(1) + ' · IC ' + w.ic[0] + '–' + w.ic[1] : ''}</p></span>`;
+        >${w ? bande(w) : 'Wallet'}</h1>
+      <p>${w ? 'score ' + scoreTxt(w) + ' · IC ' + icCourt(w) : ''}</p></span>`;
     hd.querySelector('#bk').onclick = () =>
       navInterne ? history.back() : (location.hash = '#/rank');
     return;
   }
   const e = ECRANS[r] || ECRANS['/'];
   hd.innerHTML = `<span class="htitle"><h1>${e.t}</h1><p>${e.s}</p></span>
-    ${r === '/rank' ? `<span class="lab"><span id="cnt"></span> / ${META.n}</span>` : ''}`;
+    ${r === '/rank' ? `<span class="lab"><span id="cnt"></span> /
+      <span id="cntx">${META.n}</span></span>` : ''}`;
   majCompteur();
 }
 
@@ -1437,7 +1689,9 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
 
 /* un releve ouvre une page : delegation, pour ne pas poser 267 ecouteurs */
 function ouvrirDepuis(e) {
-  if (e.target.closest('button, input, .well, summary')) return;
+  // `.ouvr` EST un bouton : il faut l'autoriser avant d'ecarter les boutons.
+  if (!e.target.closest('.ouvr')
+      && e.target.closest('button, input, .well, summary')) return;
   const c = e.target.closest('[data-a]');
   if (!c) return;
   if (routeCourante !== '/w') SCROLL[routeCourante] = window.scrollY;
@@ -1455,6 +1709,22 @@ const CONV = [
 /* La convention est simultanement la LEGENDE du style de trait des mors,
    l'indicateur de repartition, et le controle de filtre : on apprend la
    grammaire en s'en servant. */
+/* Bandeau permanent, non refermable, AU-DESSUS de la liste et dans la meme
+   graisse que le premier score. Tant que le protocole n'a pas valide l'ordre,
+   le classement s'affiche comme un brouillon — parce qu'il en est un. */
+function bandeauVerdict() {
+  const el = document.getElementById('verdict');
+  if (!el) return;
+  if (META.verdict === 'VALIDÉ' || META.verdict === 'VALIDE') { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="vbn" role="note">
+    <div class="vbt">${esc(META.verdict)} — ordre non validé</div>
+    <p>${META.avec_natif ?? 0} wallets sur ${META.n} ont été confrontés à une seconde
+    source. ${esc(phrase(META.verdict_motif))} La médiane des intervalles vaut
+    ${META.ic_largeur_mediane} points sur ${ECHELLE[1]}.</p>
+    <p class="vbs">${META.bandes} bandes d’équivalence — à l’intérieur d’une bande,
+    rien ne départage.</p></div>`;
+}
+
 function convention() {
   const el = document.getElementById('conv');
   el.innerHTML = CONV.map(x => {
@@ -1525,7 +1795,7 @@ window.addEventListener('resize', () => {
   }, 200);
 });
 
-convention(); chips(); recherche(); rendu(true); route();
+bandeauVerdict(); convention(); chips(); recherche(); rendu(true); route();
 </script>
 """
 

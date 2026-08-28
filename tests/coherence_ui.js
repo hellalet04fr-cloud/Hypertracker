@@ -161,11 +161,17 @@ const N = s => {
     if (lu.adresse.toLowerCase() !== w.a.toLowerCase())
       ecarts.push(`${w.a.slice(0, 10)} adresse : « ${lu.adresse} »`);
 
-    cmp('score', lu.score, w.score, 0.051);
+    // LA TOLERANCE SUIT L'ARRONDI DECLARE, toujours. Un chiffre n'est plus
+    // affiche au dixieme quand son intervalle depasse 20 points de large :
+    // ecrire « 98,1 » sur [64-100] annoncerait une precision que la mesure ne
+    // porte pas. L'ecart legitime devient donc 0,5, pas 0,05.
+    cmp('score', lu.score, w.score, (w.ic[1] - w.ic[0]) > 20 ? 0.51 : 0.051);
     cmp('largeur IC', lu.largeur, w.ic[1] - w.ic[0]);
     cmp('probabilité', lu.proba, w.conf);
-    cmp('Sharpe', lu.sr, w.sr, 0.00006);
-    cmp('Sharpe retenu', lu.post, w.post, 0.00006);
+    // Deux decimales, plus quatre : l'erreur type du Sharpe (Mertens) vaut
+    // 0,03 sur ce jeu — la troisieme decimale etait deja du bruit.
+    cmp('Sharpe', lu.sr, w.sr, 0.006);
+    cmp('Sharpe retenu', lu.post, w.post, 0.006);
     // Les montants sont ABREGES a l'affichage (+$6.2k) : la tolerance suit
     // l'arrondi reellement declare, pas une precision qu'on n'affiche pas.
     cmp('PnL', lu.pnl, w.pnl, tolUsd(w.pnl));
@@ -213,18 +219,30 @@ const N = s => {
   await js(`document.querySelector('[data-f="tous"]').click()`); await dodo(400);
   await js(`document.querySelector('[data-t="score"]').click()`); await dodo(400);
   const rangs = await js(`[...document.querySelectorAll('#liste .row')].slice(0,15)
-    .map(r => ({a: r.dataset.a, n: r.querySelector('.no').textContent.replace(/\\D/g,''),
+    .map(r => ({a: r.dataset.a, n: r.querySelector('.no').textContent.trim(),
                 s: r.querySelector('.sc').textContent}))`);
   const attendu = W.slice().sort((a, b) => b.score - a.score);
   rangs.forEach((r, i) => {
-    controles += 2;
+    controles += 3;
     if (r.a !== attendu[i].a)
       ecarts.push(`classement position ${i + 1} : ${r.a.slice(0, 10)} au lieu de ${attendu[i].a.slice(0, 10)}`);
-    if (Math.abs(N(r.s) - attendu[i].score) > 0.051)
-      ecarts.push(`classement position ${i + 1} : score ${r.s} ≠ ${attendu[i].score}`);
-    if (+r.n !== attendu[i].rang)
-      ecarts.push(`classement position ${i + 1} : rang affiché ${r.n} ≠ ${attendu[i].rang}`);
+    // LA TOLERANCE SUIT L'ARRONDI DECLARE : entier au-dela de 20 points d'IC,
+    // parce qu'un chiffre n'est jamais plus precis que son intervalle.
+    const tol = (attendu[i].ic[1] - attendu[i].ic[0]) > 20 ? 0.51 : 0.051;
+    if (Math.abs(N(r.s) - attendu[i].score) > tol)
+      ecarts.push(`classement position ${i + 1} : score ${r.s} != ${attendu[i].score}`);
+    // La ligne ne porte plus le rang mais la BANDE D'EQUIVALENCE : afficher 291
+    // places distinctes sur des intervalles larges de 56 points en mediane
+    // annoncait un ordre que la mesure ne porte pas.
+    const att = 'G' + String(attendu[i].groupe).padStart(2, '0');
+    if (r.n !== att)
+      ecarts.push(`classement position ${i + 1} : bande ${r.n} != ${att}`);
   });
+  // Une bande ne recule jamais quand on descend la liste triee par score :
+  // c'est la definition meme du regroupement par recouvrement d'intervalles.
+  controles++;
+  if (!rangs.every((r, i) => i === 0 || +r.n.slice(1) >= +rangs[i - 1].n.slice(1)))
+    ecarts.push('bandes non monotones : ' + rangs.map(r => r.n).join(' '));
 
   // ---- coherence des INDICATEURS d'accueil
   await js(`location.hash='#/'`); await dodo(700);

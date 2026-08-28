@@ -71,6 +71,7 @@ def prepare(a, w):
         "conf": None if w.get("p_cal") is None else round(w["p_cal"] * 100),
         "conf_lab": w["confiance"], "qualite": w["qualite"],
         "sr": round(w["sr"], 4), "post": round(w["post"], 4),
+        "se": None if w.get("se") is None else round(w["se"], 4),
         "n": w["n"], "jours": round(w["jours"]),
         "pnl": round(w["pnl"], 2), "dd": round(w["dd"], 2),
         "conc": round(w["conc"], 3),
@@ -208,6 +209,12 @@ def prepare(a, w):
     return out
 
 
+# Au-dela de ce niveau, un profit factor cesse de decrire une performance et
+# decrit un echantillon : quelques gagnants enormes contre presque aucun
+# perdant. Ce n'est pas une force, c'est une fragilite.
+PF_DEGENERE = 10.0
+
+
 def analyser(w):
     """Points forts / faibles / vigilance, derives des metriques EXISTANTES."""
     forts, faibles, risques = [], [], []
@@ -222,7 +229,11 @@ def analyser(w):
     if w["sr"] >= 0.30: forts.append(f"Sharpe par trade élevé — {w['sr']:.2f}")
     elif w["sr"] <= 0.05: faibles.append(f"Sharpe faible — {w['sr']:.2f}")
     if w["win"] is not None and w["win"] >= 60: forts.append(f"Taux de réussite {w['win']:.0f} %")
-    if w["pf"] is not None and w["pf"] >= 1.5: forts.append(f"Profit factor {w['pf']:.2f}")
+    if w["pf"] is not None and w["pf"] > PF_DEGENERE:
+        risques.append(f"Distribution dégénérée — profit factor {w['pf']:.1f} sur "
+                       f"{w['n']} trades, très peu de trades perdants")
+    elif w["pf"] is not None and w["pf"] >= 1.5:
+        forts.append(f"Profit factor {w['pf']:.2f}")
     ret = 1 - w["post"] / w["sr"] if w["sr"] else 0
     if ret > 0.5:
         faibles.append("Estimation fortement rétrécie : échantillon trop mince "
@@ -348,8 +359,30 @@ for i, w in enumerate(CL["classement"], 1):
     d["drang"] = (rangs[-2] - rangs[-1]) if len(rangs) >= 2 else None
     wallets.append(d)
 
+# --- BANDES D'EQUIVALENCE : voir la note ci-dessus. Calculees APRES le
+#     classement complet, sur l'ordre reel des scores.
+_bande, _ancre = 1, None
+for _w in sorted(wallets, key=lambda x: x["rang"]):
+    if _ancre is None or not (_w["ic"][0] <= _ancre["ic"][1]
+                              and _w["ic"][1] >= _ancre["ic"][0]):
+        if _ancre is not None:
+            _bande += 1
+        _ancre = _w
+    _w["groupe"] = _bande
+
+_par_score = {}
+for _w in wallets:
+    _par_score[_w["score"]] = _par_score.get(_w["score"], 0) + 1
+for _w in wallets:
+    _w["exaequo"] = _par_score[_w["score"]]
+
 meta = {
     "n": len(wallets), "trades": sum(w["n"] for w in wallets),
+    # Combien de bandes le classement porte reellement, et combien de wallets
+    # touchent une borne de l'echelle — l'ecran doit pouvoir le dire.
+    "bandes": _bande,
+    "satures_haut": sum(1 for w in wallets if w["ic"][1] >= 100),
+    "ic_largeur_mediane": sorted(w["ic"][1] - w["ic"][0] for w in wallets)[len(wallets) // 2],
     # DATE DERIVEE, plus un litteral. Elle etait ecrite en dur et se perimait
     # a chaque cycle : l'ecran Donnees annoncait « mise a jour 2026-08-24 »
     # trois lignes au-dessus de « derniere collecte 27 aout ». Le seul
