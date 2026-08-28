@@ -267,7 +267,7 @@ header{position:sticky;top:0;z-index:60;background:var(--fond);
 /* Marques reportees d'une section a l'autre : un wallet fraichement qualifie et
    deja dormant est l'information la plus interessante de l'ecran ; elle etait
    eparpillee sur deux listes distantes de 400 px. */
-.mk{flex:0 0 auto;font:400 12px/1 "DM Mono",monospace;padding:0 2px}
+.mk{flex:0 0 auto;font:400 12px/1 "DM Mono",monospace;margin-left:-6px;padding:0 1px}
 .mk.d{color:var(--alerte)}
 .mk.n{color:var(--neuf)}
 
@@ -366,8 +366,10 @@ header{position:sticky;top:0;z-index:60;background:var(--fond);
 .pied b{color:var(--index);font-weight:400}
 /* L'age d'une donnee est une mesure, pas une decoration : au-dela du seuil il
    change de couleur, parce qu'a ce moment-la il change de sens. */
-.age{display:block;margin-top:2px;font:400 11px/1.4 "DM Mono",monospace;
-  color:var(--faible)}
+.age{font:400 11px/1.4 "DM Mono",monospace;color:var(--faible)}
+/* Dans une cellule de la grille, la valeur est en `nowrap` : l'age s'y collait.
+   Dans une phrase, en revanche, il doit rester dans le fil du texte. */
+.cell .age{display:block;margin-top:2px}
 .age.vieux{color:var(--alerte)}
 
 /* bandeau : quatre nombres, aucune boite */
@@ -526,9 +528,14 @@ const phrase = t => { const x = String(t || '').trim();
 /* Les messages du cycle citent les classes en clair machine — « qualifié —
    EXCELLENT_CANDIDATE, rang 44 ». C'est la bonne trace dans un journal ; a
    l'ecran, c'est un mot que personne ne parle. */
-const humaniser = t => String(t || '').replace(
-  /\b(EXCELLENT_CANDIDATE|PROMISING|INSUFFICIENT_DATA|REJECTED|RANKED|DISCOVERY|ARCHIVED)\b/g,
-  m => CLASSES[m] || ETIQ[m] || m);
+const ACCENTS = { qualifie: 'qualifié', reactive: 'réactivé', archive: 'archivé',
+  anciennete: 'ancienneté', regularite: 'régularité', decouvert: 'découvert',
+  refute: 'réfuté', reevalue: 'réévalué' };
+const humaniser = t => String(t || '')
+  .replace(/\b(EXCELLENT_CANDIDATE|PROMISING|INSUFFICIENT_DATA|REJECTED|RANKED|DISCOVERY|ARCHIVED)\b/g,
+    m => CLASSES[m] || ETIQ[m] || m)
+  .replace(/\b(qualifie|reactive|archive|anciennete|regularite|decouvert|refute|reevalue)\b/g,
+    m => ACCENTS[m] || m);
 const date = t => t ? new Date(t).toLocaleDateString('fr-FR',
   {day: '2-digit', month: 'short', year: '2-digit'}) : NA;
 const dateh = t => t ? new Date(t).toLocaleString('fr-FR',
