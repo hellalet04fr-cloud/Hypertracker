@@ -1,6 +1,7 @@
 """Prepare les donnees de l'application. Precalcule tout : aucun calcul au rendu.
 Ne touche a aucun score, seuil ni protocole — il ne fait que deriver de l'affichable."""
 import json, os, math, time, statistics as st
+from ht import screening as SCR          # seuils du protocole, en lecture seule
 
 D = os.environ.get("HT_DATA_ROOT", r"C:\Users\maram\ht_data")
 CL = json.load(open(os.path.join(D, "classement_wallets.json")))
@@ -76,9 +77,9 @@ def prepare(a, w):
     }
     if not r:
         out.update({"win": None, "pf": None, "best": None, "pire": None,
-                    "duree_h": None, "tpj": None, "vol": None, "eq": [], "hist": [],
-                    "coins": [], "t0": None, "t1": None, "ddc": [], "frais": None,
-                    "stab": None, "pire_serie": None, "mois": [], "act": []})
+                    "duree_h": None, "tpj": None, "vol": None, "eq": None, "hist": [],
+                    "coins": [], "t0": None, "t1": None, "frais": None,
+                    "stab": None, "pire_serie": None, "m": []})
         return out
 
     gains = [x for x in r if x > 0]
@@ -115,19 +116,34 @@ def prepare(a, w):
     # du premier point au lieu de 0, 57 wallets donnaient une courbe dont le maximum
     # contredisait le champ `dd` affiche juste a cote, jusqu'a 5 499 USD d'ecart. Avec
     # cette convention, l'ecart maximal tombe a 0.005 (arrondi seul).
-    c, sommet, eq, ddc = 0.0, 0.0, [], []
+    # UNE SEULE COURBE EST STOCKEE. Le drawdown se DEDUIT de l'equity — c'est
+    # d'ailleurs ainsi qu'il est calcule : dd(i) = max(eq[0..i], 0) - eq(i). Le
+    # stocker separement doublait la charge pour zero information nouvelle :
+    # mesure, `eq` et `ddc` pesaient 1 503 Ko sur les 1 857 Ko du document.
+    #
+    # Pour que la deduction soit EXACTE apres sous-echantillonnage, tout point qui
+    # met le sommet a jour doit survivre : sans eux, le pic precedant le creux peut
+    # disparaitre et le drawdown recalcule sous-estime — mesure sur 31 wallets sur
+    # 267, jusqu'a 161 USD. Ils sont donc forces, comme le creux l'etait deja. Cout
+    # reel : 5 points de plus en mediane sur un echantillon de 240.
+    c, sommet, eq, ddc, pics = 0.0, 0.0, [], [], []
     for t, x in zip(tr, r):
         c += x
-        sommet = max(sommet, c)
+        if c > sommet:
+            sommet = c
+            pics.append(len(eq))
         eq.append([t["close"], round(c, 2)])
-        ddc.append([t["close"], round(sommet - c, 2)])
-    # Les deux courbes partagent le MEME jeu d'indices : elles restent alignees dans
-    # le temps, et le point de creux maximal — celui qui porte la valeur `dd` affichee
-    # — survit a l'echantillonnage au lieu d'etre elimine.
-    creux = max(range(len(ddc)), key=lambda i: ddc[i][1])
-    idx = indices(len(eq), N_EQ, obligatoires=(creux,))
-    out["eq"] = [eq[i] for i in idx]
-    out["ddc"] = [ddc[i] for i in idx]
+        ddc.append(round(sommet - c, 2))
+    creux = max(range(len(ddc)), key=lambda i: ddc[i])
+    idx = indices(len(eq), N_EQ, obligatoires=tuple(pics) + (creux,))
+
+    # HORODATAGES EN DELTAS DE SECONDES. Chaque point portait un epoch en
+    # millisecondes — treize chiffres repetes 240 fois. Les ecarts successifs en
+    # tiennent quatre a six, et la seconde est mille fois plus fine que l'axe des
+    # dates affiche.
+    ts = [eq[i][0] // 1000 for i in idx]
+    out["eq"] = {"t0": ts[0], "d": [ts[k] - ts[k - 1] for k in range(1, len(ts))],
+                 "v": [eq[i][1] for i in idx]}
 
     # REGULARITE MENSUELLE. Le moteur calcule deja cette grandeur en interne
     # (ht/ranking.py, « persistance : mois gagnants »), mais ne la publie pas dans le
@@ -150,21 +166,17 @@ def prepare(a, w):
     else:
         out["stab"] = None
         out["pire_serie"] = None
-    out["mois"] = [[f"{y:04d}-{m:02d}", round(par_mois[(y, m)], 2)] for y, m in mois]
-
-    # ACTIVITE DANS LE TEMPS : nombre de trades clos par mois. Derivee des memes
-    # horodatages que le PnL mensuel, donc exactement aussi reelle. C'est la seule
-    # facon honnete de montrer « ce wallet trade-t-il encore » sur une courbe :
-    # le score, lui, ignore la fraicheur.
-    cnt_mois = {}
+    # UNE SEULE SERIE MENSUELLE : etiquette, PnL, nombre de trades. Les deux
+    # tableaux precedents portaient les MEMES etiquettes de mois, dupliquees.
+    # L'activite mensuelle vient des memes horodatages que le PnL, donc elle est
+    # exactement aussi reelle — et c'est la seule facon honnete de montrer « ce
+    # wallet trade-t-il encore », que le score ignore par construction.
+    cnt = {}
     for t in tr:
         d2 = time.gmtime(t["close"] / 1000)
-        cnt_mois[(d2.tm_year, d2.tm_mon)] = cnt_mois.get((d2.tm_year, d2.tm_mon), 0) + 1
-    out["act"] = [[f"{y:04d}-{m:02d}", cnt_mois[(y, m)]] for y, m in sorted(cnt_mois)]
-    # sparkline : forme normalisee 0-1, pour scanner la trajectoire sans ouvrir la fiche
-    sp = echant([y for _, y in eq], N_SPARK)
-    lo, hi = min(sp), max(sp)
-    out["sp"] = [round((v - lo) / (hi - lo), 3) for v in sp] if hi > lo else [0.5] * len(sp)
+        cnt[(d2.tm_year, d2.tm_mon)] = cnt.get((d2.tm_year, d2.tm_mon), 0) + 1
+    out["m"] = [[f"{y:04d}-{m:02d}", round(par_mois[(y, m)], 2), cnt.get((y, m), 0)]
+                for y, m in mois]
 
     # distribution des resultats, bornee aux quantiles pour rester lisible
     s = sorted(r)
@@ -365,12 +377,21 @@ meta = {
     "archives_total": len(REG["archives"]),
     "sans_p_cal": sum(1 for w in wallets if w.get("conf") is None),
     "registre": bool(REG["statuts"]),
+    # SEUILS LUS DANS LE MOTEUR, jamais recopies dans le gabarit. L'interface
+    # explique pourquoi un candidat n'est pas qualifie ; si elle enonce « 130
+    # jours » de son propre chef et que ht.screening en demande 150 demain,
+    # elle ment sans que rien ne le signale. Les faire transiter par la donnee
+    # rend cette derive impossible.
+    "seuil_jours": SCR.MIN_JOURS,
+    "seuil_trades": SCR.MIN_TRADES,
+    "seuil_conc": SCR.MAX_CONCENTRATION,
 }
 out = os.path.join(D, "app_data.json")
 json.dump({"meta": meta, "wallets": wallets,
            "archives": REG["archives"], "daily": REG["daily"]},
           open(out, "w"), separators=(",", ":"))
 print(f"ecrit -> {out}  ({os.path.getsize(out)/1024:.0f} Ko)")
-print(f"  {len(wallets)} wallets | equity moyenne {st.mean(len(w['eq']) for w in wallets):.0f} points")
+print(f"  {len(wallets)} wallets | equity moyenne "
+      f"{st.mean(len(w['eq']['v']) if w['eq'] else 0 for w in wallets):.0f} points")
 print(f"  avec natifs OBSERVED : {sum(1 for w in wallets if w.get('obs'))}")
 print(f"  win rate disponible  : {sum(1 for w in wallets if w['win'] is not None)}/{len(wallets)}")

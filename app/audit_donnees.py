@@ -86,14 +86,20 @@ def main() -> int:
         if abs(w[k] - CL[w["a"]][k]) > tol + 1e-9)
 
     # --- la courbe doit se terminer sur le PnL REEL du wallet
+    #     L'equity est delta-encodee — {t0, d[], v[]} — pour diviser par deux le
+    #     poids du document ; les valeurs, elles, sont inchangees.
     r["courbes mal terminees"] = sum(
         1 for w in A["wallets"] if w["eq"] and
-        abs(w["eq"][-1][1] - round(sum(t["pnl"] - t["fee"] for t in SER[w["a"]]), 2)) > 0.02)
+        abs(w["eq"]["v"][-1] - round(sum(t["pnl"] - t["fee"] for t in SER[w["a"]]), 2)) > 0.02)
 
     r["histogrammes incoherents"] = sum(
         1 for w in A["wallets"] if w.get("hist") and sum(w["hist"]["b"]) != w["n"])
-    r["sparklines hors bornes"] = sum(
-        1 for w in A["wallets"] for x in (w.get("sp") or []) if x < 0 or x > 1)
+    # --- les horodatages delta-encodes doivent rester croissants : un ecart
+    #     negatif ferait reculer le temps sur la courbe reconstruite
+    r["horodatages non monotones"] = sum(
+        1 for w in A["wallets"] if w["eq"] and any(d < 0 for d in w["eq"]["d"]))
+    r["series desappariees"] = sum(
+        1 for w in A["wallets"] if w["eq"] and len(w["eq"]["d"]) != len(w["eq"]["v"]) - 1)
 
     # --- les champs indisponibles doivent rester N/D, jamais combles
     # Le capital engage et le sens des positions n'existent pas dans la source : ces
@@ -104,21 +110,28 @@ def main() -> int:
                       ("Long/Short force a N/D", "cellule('Long / Short', NA)")):
         r[lab.lower()] = 0 if marq in html else 1
 
-    # --- la courbe de drawdown doit culminer exactement sur le champ `dd` affiche
-    r["courbes de drawdown en ecart"] = sum(
-        1 for w in A["wallets"] if w.get("ddc")
-        and abs(max(p[1] for p in w["ddc"]) - w["dd"]) > 0.02)
+    # --- le drawdown DEDUIT de l'equity doit culminer sur le champ `dd` affiche
+    # Il n'est plus stocke : le conserver a part doublait la charge pour zero
+    # information nouvelle. La deduction n'est exacte apres sous-echantillonnage
+    # que si tout point mettant le sommet a jour a survecu — c'est precisement
+    # ce que ce compteur verifie, wallet par wallet.
+    def _dd_deduit(w):
+        sommet = 0.0
+        pire = 0.0
+        for v in w["eq"]["v"]:
+            if v > sommet:
+                sommet = v
+            pire = max(pire, sommet - v)
+        return pire
 
-    # --- eq et ddc partagent le meme echantillonnage : desalignees, elles
-    # raconteraient deux histoires temporelles differentes du meme wallet
-    r["courbes desynchronisees"] = sum(
-        1 for w in A["wallets"] if w.get("ddc")
-        and [p[0] for p in w["ddc"]] != [p[0] for p in w["eq"]])
+    r["drawdown deduit en ecart"] = sum(
+        1 for w in A["wallets"]
+        if w["eq"] and w.get("dd") is not None and abs(_dd_deduit(w) - w["dd"]) > 0.02)
 
     # --- une regularite mensuelle non calculable reste None, jamais 0
     r["regularite fabriquee"] = sum(
         1 for w in A["wallets"]
-        if w.get("stab") is not None and len(w.get("mois") or []) < 3)
+        if w.get("stab") is not None and len(w.get("m") or []) < 3)
 
     print("AUDIT D'AUTHENTICITE — chaque compteur doit valoir ZERO")
     print("=" * 56)

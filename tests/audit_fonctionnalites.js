@@ -69,13 +69,25 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
   // ═══════════════════════════════════════════════════ 1. NAVIGATION
   section = 'Navigation';
   for (const [h, v, nom] of [['#/', 'v-jour', 'Aujourd’hui'], ['#/rank', 'v-rank', 'Classement'],
-      ['#/disco', 'v-disco', 'Découverte'], ['#/watch', 'v-watch', 'Suivi'],
       ['#/data', 'v-data', 'Données']]) {
     await va(h);
     const ok = await js(`document.getElementById('${v}').classList.contains('on')`);
     const n = await js(`document.getElementById('${v}').textContent.trim().length`);
     dit(ok && n > 120 ? 'OK' : 'KO', `espace ${nom}`, `${n} caractères rendus`);
   }
+  // Deux espaces ont ete absorbes — « Suivi » etait deja un filtre du
+  // classement, « Découverte » repondait a la meme question qu'« Aujourd'hui ».
+  // Leurs adresses restent valides : un lien mis en favori ne cesse pas
+  // d'exister parce qu'un onglet disparait.
+  await va('#/watch');
+  dit(await js(`document.getElementById('v-rank').classList.contains('on')
+    && ETAT.filtre === 'suivi'`) ? 'OK' : 'KO',
+      'ancienne adresse #/watch → classement filtré sur le suivi');
+  await va('#/disco');
+  dit(await js(`document.getElementById('v-jour').classList.contains('on')`) ? 'OK' : 'KO',
+      'ancienne adresse #/disco → Aujourd’hui');
+  await va('#/rank');
+  await js(`document.querySelector('[data-f="ranked"]').click()`); await dodo(300);
   await va('#/rank');
   const a0 = await js(`W[3].a`);
   await va('#/w/' + a0, 900);
@@ -105,7 +117,7 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
     ['q2', 'Qualité moyenne', `W.filter(w=>w.conf_lab==='moyenne').length`],
     ['q1', 'Qualité faible', `W.filter(w=>w.conf_lab==='faible').length`],
     ['obs', 'Observé', `W.filter(w=>!!w.obs).length`],
-    ['suivi', 'Watchlist', `0`],
+    ['suivi', 'Suivis', `WATCH.length`],
     ['disco', 'Observation', `W.filter(w=>w.st==='DISCOVERY').length`],
   ];
   for (const [cle, nom, attendu] of F) {
@@ -116,6 +128,7 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
         `${got} wallet(s)` + (exp === 0 ? ' — aucun dans le jeu actuel' : ''));
   }
   await js(`document.querySelector('[data-f="tous"]').click()`); await dodo(250);
+  await js(`document.querySelector('[data-t="score"]').click()`); await dodo(250);
 
   section = 'Classement · convention';
   for (const [c, lib] of [['q3', 'élevée'], ['q2', 'moyenne'], ['q1', 'faible']]) {
@@ -144,13 +157,17 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
     ['stab', 'Régularité', `courant.slice(0,20).every((w,i,a)=>i===0||(a[i-1].stab??-1)>=(w.stab??-1))`,
       `W.filter(w=>w.stab==null).length`],
     ['conc', 'Concentration', `courant.slice(0,20).every((w,i,a)=>i===0||a[i-1].conc<=w.conc)`, null],
+    // L'ordre choisi par l'utilisateur est un tri a part entiere : sans lui, les
+    // fleches de reordonnancement deplaceraient un rang que personne ne voit.
+    ['mien', 'Mon ordre', `true`, `W.length`],
   ];
   for (const [cle, nom, mono, manquants] of T) {
     await js(`document.querySelector('[data-t="${cle}"]').click()`); await dodo(230);
     const ok = await js(mono);
     const nd = manquants ? await js(manquants) : 0;
     dit(!ok ? 'KO' : (nd ? 'LIM' : 'OK'), `tri « ${nom} »`,
-        nd ? `${nd} wallet(s) sans cette grandeur, rangés en fin` : 'monotone');
+        cle === 'mien' ? 'n’ordonne que les wallets suivis — vide pour les autres'
+                       : (nd ? `${nd} wallet(s) sans cette grandeur, rangés en fin` : 'monotone'));
   }
   await js(`document.querySelector('[data-t="score"]').click()`); await dodo(250);
 
@@ -184,19 +201,26 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
   await js(`window.scrollTo(0,0)`); await dodo(300);
   dit(await js(`document.getElementById('cnt').textContent===String(courant.length)`) ? 'OK' : 'KO',
       'compteur d’en-tête');
-  dit(await js(`document.getElementById('rug').width>0`) ? 'OK' : 'KO',
-      'rug de population (tous les scores)');
-  const champs = await js(`(()=>{const t=document.querySelector('#liste .row').textContent;
-    return {no:/N°/.test(t), ic:/IC /.test(t), larg:/largeur/.test(t), qual:/qualité/.test(t),
-      proba:/proba/.test(t), tr:/tr\\./.test(t), j30:/30j/.test(t), j7:/7j/.test(t),
-      dd:/DD/.test(t), act:/actif|récent|inactif/.test(t)};})()`);
+  dit(await js(`document.querySelectorAll('#conv .cseg').length===3`) ? 'OK' : 'KO',
+      'convention : légende, répartition et filtre en un seul objet');
+  // CINQ grandeurs, pas quatorze. Les neuf autres ne sont pas perdues : elles
+  // sont sur la fiche, ou on les lit vraiment plutot que de les balayer.
+  const champs = await js(`(()=>{const r=document.querySelector('#liste .row');
+    return {rang:!!r.querySelector('.no'), adresse:!!r.querySelector('.adr'),
+      mesure:!!r.querySelector('.sc'), rail:!!r.querySelector('svg.rail'),
+      contexte:/trades/.test(r.querySelector('.r2').textContent),
+      activite:/actif|récent|inactif|activité/.test(r.textContent)};})()`);
   const manque = Object.entries(champs).filter(x => !x[1]).map(x => x[0]);
-  dit(manque.length ? 'KO' : 'OK', 'ligne dense : 14 grandeurs',
-      manque.length ? 'manquent : ' + manque.join(', ') : 'toutes présentes');
+  dit(manque.length ? 'KO' : 'OK', 'ligne minimale : les 5 essentiels',
+      manque.length ? 'manquent : ' + manque.join(', ')
+                    : 'rang · adresse · mesure + rail · volume · fraîcheur');
   dit(await js(`[...document.querySelectorAll('#liste .row')].every(r=>r.querySelector('svg.rail'))`)
       ? 'OK' : 'KO', 'aucun score sans son rail');
-  dit(await js(`[...document.querySelectorAll('#liste .row')].every(r=>r.querySelector('.bg'))`)
-      ? 'OK' : 'KO', 'badge de provenance sur chaque ligne');
+  const nObs = await js(`W.filter(w=>!!w.obs).length`);
+  dit(await js(`[...document.querySelectorAll('#liste .row')]
+    .every(r => !!r.querySelector('.bg.obs') === !!byA[r.dataset.a].obs)`)
+      ? 'OK' : 'KO', 'provenance : seule l’exception est marquée',
+      `${nObs}/${NW} observés — 262 mentions « Dérivé » identiques n’informeraient personne`);
   const ndrang = await js(`W.filter(w=>w.drang==null).length`);
   dit(ndrang ? 'LIM' : 'OK', 'variation de rang affichée',
       `${NW - ndrang}/${NW} calculables — moins de deux relevés pour les autres`);
@@ -218,6 +242,22 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
   dit(/copi|refus/i.test(await js(`document.getElementById('cpb').textContent`)) ? 'OK' : 'KO',
       'copie de l’adresse groupée');
   await dodo(1300);
+
+  // REVELATION PROGRESSIVE : l'essentiel se lit sans rien ouvrir. Vingt-quatre
+  // mesures et six graphiques poses en haut ne sont pas de la richesse, c'est
+  // du bruit. On verifie donc l'etat ferme avant d'ouvrir.
+  const vus0 = await js(`[...document.querySelectorAll('#v-wallet canvas')]
+    .filter(c=>c.getBoundingClientRect().width>0).length`);
+  dit(vus0 <= 3 ? 'OK' : 'KO', 'fiche fermée : seul l’essentiel est dessiné',
+      `${vus0} graphique(s) — mesure, cadran, PnL`);
+  dit(await js(`document.getElementById('reste').hidden===true
+    && /Tout voir/.test(document.getElementById('plus').textContent)`) ? 'OK' : 'KO',
+      'le détail est annoncé, pas caché');
+  await js(`(()=>{const d=document.getElementById('plus');
+    d.open=true; d.dispatchEvent(new Event('toggle'));})()`);
+  await dodo(800);
+  dit(await js(`document.getElementById('reste').hidden===false`) ? 'OK' : 'KO',
+      'ouverture de « Tout voir »');
 
   const cells = await js(`[...document.querySelectorAll('#v-wallet .cell')].map(c=>({
     k: c.querySelector('.cell-k').textContent.trim(),
@@ -249,9 +289,16 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
   dit(h5 ? (nhisto >= 5 ? 'OK' : 'LIM') : 'LIM', 'évolution du rang et du score',
       h5 ? `${nhisto} relevés — l’historique s’enrichit d’un point par jour`
          : 'moins de 2 relevés pour ce wallet');
-  dit('OK', 'rétrécissement bayésien tracé', 'déplacement Sharpe observé → retenu');
-  dit(await js(`document.querySelectorAll('#v-wallet .why').length>0`) ? 'OK' : 'KO',
+  dit('OK', 'rétrécissement bayésien tracé', 'déplacement Sharpe brut → retenu');
+  dit(await js(`document.querySelectorAll('#v-wallet .wl').length>0`) ? 'OK' : 'KO',
       'explication « pourquoi ce wallet est ici »');
+  // Le drawdown n'est plus stocke : il se DEDUIT de l'equity, ce qui est sa
+  // definition. La deduction doit redonner exactement ce que le moteur calcule.
+  dit(await js(`(()=>{const w=byA[location.hash.slice(4)];const c=drawdown(w);
+    if(!c.length||w.dd==null)return true;
+    return Math.abs(Math.max(...c.map(p=>-p[1]))-w.dd)<0.03;})()`) ? 'OK' : 'KO',
+      'drawdown déduit de l’equity, fidèle au moteur',
+      'une seule courbe stockée au lieu de deux : −57 % de charge');
   dit(await js(`/Cycle de vie/.test(document.getElementById('v-wallet').textContent)`) ? 'OK' : 'KO',
       'cycle de vie : statut, qualification, dates, retours');
   dit(await js(`document.querySelectorAll('#v-wallet .prot').length>0`) ? 'OK' : 'KO',
@@ -268,22 +315,28 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
   dit((await js(`JSON.parse(localStorage.getItem('ht.watch')).length`)) === 1 ? 'OK' : 'KO',
       'persistance locale du suivi');
   await js(`WATCH.push(W[5].a); WATCH.push(W[9].a); majWatch()`);
+  // Le suivi n'est plus un espace : c'est un filtre du classement. Aucune
+  // fonction n'est perdue — l'ecran retrecit, la recherche et les tris de la
+  // liste s'appliquent desormais aussi aux wallets suivis.
   await va('#/watch');
-  dit((await js(`document.querySelectorAll('#wl .row').length`)) === 3 ? 'OK' : 'KO',
+  dit((await js(`document.querySelectorAll('#liste .row').length`)) === 3 ? 'OK' : 'KO',
       'affichage des wallets suivis');
+  dit(await js(`[...document.querySelectorAll('#liste .row')].map(r=>r.dataset.a)
+    .join(',')===WATCH.join(',')`) ? 'OK' : 'KO',
+      'l’ordre affiché EST l’ordre enregistré');
   const avant = await js(`WATCH.join(',')`);
-  await js(`document.querySelectorAll('#wl [data-mv]')[1].click()`); await dodo(320);
+  await js(`document.querySelectorAll('#liste [data-mv]')[1].click()`); await dodo(400);
   dit((await js(`WATCH.join(',')`)) !== avant ? 'OK' : 'KO', 'réordonnancement (monter / descendre)');
-  await js(`(()=>{const q=document.getElementById('wq');q.value='zzz';
-    q.dispatchEvent(new Event('input'));})()`); await dodo(320);
-  dit((await js(`document.querySelectorAll('#wl .row').length`)) === 0 ? 'OK' : 'KO',
-      'filtre de la watchlist');
-  await js(`(()=>{const q=document.getElementById('wq');q.value='';
-    q.dispatchEvent(new Event('input'));})()`); await dodo(320);
-  await js(`document.querySelectorAll('#wl [data-rm]')[0].click()`); await dodo(320);
+  await js(`(()=>{const q=document.getElementById('q');q.value='zzz';
+    q.dispatchEvent(new Event('input'));})()`); await dodo(400);
+  dit((await js(`document.querySelectorAll('#liste .row').length`)) === 0 ? 'OK' : 'KO',
+      'la recherche s’applique aussi au suivi');
+  await js(`document.getElementById('qc').click()`); await dodo(400);
+  await js(`document.querySelectorAll('#liste [data-rm]')[0].click()`); await dodo(400);
   dit((await js(`WATCH.length`)) === 2 ? 'OK' : 'KO', 'retrait du suivi');
-  dit(await js(`/collecte/.test(document.getElementById('wl').textContent)`) ? 'OK' : 'KO',
-      'suivi : statut, dernière collecte, variation');
+  dit(await js(`[...document.querySelectorAll('#liste .row')]
+    .every(r=>/trades/.test(r.textContent))`) ? 'OK' : 'KO',
+      'suivi : mesure, volume et fraîcheur, comme toute ligne');
   dit('LIM', 'alertes par wallet suivi',
       'les alertes existent côté cycle mais ne sont pas rattachées à un wallet dans l’UI');
   // PARCOURS REEL : on retire les wallets un par un depuis l'ecran, comme le
@@ -291,14 +344,19 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
   // ne redeclenche aucun rendu — reaffecter le meme fragment n'emet pas
   // hashchange — et faisait echouer ce test sans qu'aucun defaut n'existe.
   while (await js(`WATCH.length`)) {
-    await js(`document.querySelector('#wl [data-rm]').click()`);
-    await dodo(280);
+    await js(`document.querySelector('#liste [data-rm]').click()`);
+    await dodo(320);
   }
-  dit((await js(`document.querySelectorAll('#wl .empty').length`)) === 1 ? 'OK' : 'KO',
+  dit((await js(`document.querySelectorAll('#liste .empty').length`)) === 1 ? 'OK' : 'KO',
       'état vide du suivi après retrait du dernier wallet');
-  await va('#/rank'); await va('#/watch');
-  dit((await js(`document.querySelectorAll('#wl .empty').length`)) === 1 ? 'OK' : 'KO',
+  await va('#/'); await va('#/watch');
+  dit((await js(`document.querySelectorAll('#liste .empty').length`)) === 1 ? 'OK' : 'KO',
       'état vide du suivi conservé après aller-retour');
+  // Les fleches ne s'affichent QUE sous ce couple filtre + tri : une commande
+  // qui ne sert que la n'a pas a peser sur les 267 autres releves.
+  await js(`document.querySelector('[data-f="tous"]').click()`); await dodo(400);
+  dit((await js(`document.querySelectorAll('#liste [data-mv]').length`)) === 0 ? 'OK' : 'KO',
+      'les commandes de suivi restent dans leur contexte');
 
   // ═══════════════════════════════════════════════════ 8. AUJOURD'HUI
   section = 'Aujourd’hui';
@@ -317,15 +375,17 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
   dit(await js(`document.querySelectorAll('#jour .prot').length>0`) ? 'OK' : 'KO',
       'blocages affichés en clair');
 
-  // ═══════════════════════════════════════════════════ 9. DECOUVERTE
+  // ═══════════════════════════════════════════════════ 9. DECOUVERTE (absorbée)
   section = 'Découverte';
-  await va('#/disco');
+  await va('#/');
   const nq = await js(`W.filter(w=>w.promu!=null).length`);
   dit(nq ? 'OK' : 'LIM', 'récemment qualifiés',
       `${nq} wallets datés — le champ n’existe que depuis le registre`);
   const nsurv = await js(`((DAILY||{}).watch||[]).length`);
-  dit(nsurv ? 'OK' : 'LIM', 'en observation', `${nsurv} candidats dans le dernier rapport`);
-  dit(await js(`/découvert/i.test(document.getElementById('disco').textContent)`) ? 'OK' : 'KO',
+  dit(nsurv ? 'OK' : 'LIM', 'candidats du dernier cycle',
+      `${nsurv} candidats — « candidats » et non « en observation » : ce mot désigne ` +
+      `ailleurs les 31 505 wallets de l’état DISCOVERY`);
+  dit(await js(`/qualifi/i.test(document.getElementById('jour').textContent)`) ? 'OK' : 'KO',
       'distinction découvert / qualifié explicitée');
   dit('LIM', 'raison de découverte par wallet',
       `champ présent mais vide pour ${NW}/${NW} wallets : antérieurs à sa création`);
@@ -384,7 +444,7 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
     await cmd('Emulation.setDeviceMetricsOverride',
       { width: w, height: 844, deviceScaleFactor: 2, mobile: true });
     let deb = 0, tronq = 0;
-    for (const h of ['#/', '#/rank', '#/disco', '#/watch', '#/data', '#/w/' + a0]) {
+    for (const h of ['#/', '#/rank', '#/watch', '#/data', '#/w/' + a0]) {
       await va(h, 480);
       const d = await js(`(()=>{const vw=document.documentElement.clientWidth;
         const b=[...document.querySelectorAll('.view.on *')].filter(e=>{
@@ -397,7 +457,7 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
       deb += d.b + (d.sw > d.vw + 1 ? 1 : 0); tronq += d.t;
     }
     dit(deb === 0 && tronq === 0 ? 'OK' : 'KO', `rendu à ${w} px`,
-        `${deb} débordement(s), ${tronq} texte(s) coupé(s) sur 6 écrans`);
+        `${deb} débordement(s), ${tronq} texte(s) coupé(s) sur 5 écrans`);
   }
 
   // ═══════════════════════════════════════════════════ RAPPORT

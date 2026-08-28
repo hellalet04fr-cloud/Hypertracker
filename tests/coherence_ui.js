@@ -93,6 +93,13 @@ const N = s => {
   for (const w of ech) {
     await js(`location.hash='#/w/${w.a}'`);
     await dodo(620);
+    // « Tout voir » : les mesures secondaires sont derriere une revelation
+    // progressive. Sans cette ouverture le controle lirait un DOM vide et
+    // conclurait a une divergence qui n'existe pas.
+    await js(`(() => { const d = document.getElementById('plus');
+      if (d && !d.open) { d.open = true; d.dispatchEvent(new Event('toggle')); }
+      return !!d; })()`);
+    await dodo(420);
 
     const lu = await js(`(() => {
       const el = document.getElementById('v-wallet');
@@ -178,9 +185,15 @@ const N = s => {
     // La courbe doit se terminer sur le PnL affiche : c'est le defaut qui avait
     // touche 39 wallets sur 231.
     controles++;
-    const fin = (w.eq && w.eq.length) ? w.eq[w.eq.length - 1][1] : null;
+    const fin = (w.eq && w.eq.v && w.eq.v.length) ? w.eq.v[w.eq.v.length - 1] : null;
     if (fin != null && Math.abs(fin - w.pnl) > 0.02)
       ecarts.push(`${w.a.slice(0, 10)} courbe : finit à ${fin}, PnL ${w.pnl}`);
+
+    controles++;
+    const ddDeduit = await js(`(() => { const c = drawdown(byA['${w.a}']);
+      return c.length ? Math.max(...c.map(p => -p[1])) : null; })()`);
+    if (ddDeduit != null && w.dd != null && Math.abs(ddDeduit - w.dd) > 0.02)
+      ecarts.push(`${w.a.slice(0, 10)} drawdown déduit ${ddDeduit} ≠ moteur ${w.dd}`);
   }
 
   // ---- coherence du CLASSEMENT : l'ordre affiche est-il l'ordre calcule ?

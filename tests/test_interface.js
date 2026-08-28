@@ -2,10 +2,11 @@
  * Test fonctionnel de l'interface, pilote par le protocole DevTools.
  *
  * Il verifie des PARCOURS REELS, pas la presence de balises : navigation entre
- * les cinq espaces, recherche, filtres, tri, ouverture de fiche, adresse
- * complete et copiable, graphiques dessines, infobulles tactiles, watchlist
- * persistante et reordonnable, retour sans perte de contexte, etats vides, et
- * absence de debordement horizontal a quatre largeurs d'iPhone.
+ * les trois espaces, survie des deux anciennes adresses, recherche, filtres,
+ * tri, revelation progressive de la fiche, adresse complete et copiable,
+ * graphiques dessines, infobulles tactiles, suivi persistant et reordonnable,
+ * retour sans perte de contexte, etats vides, et absence de debordement
+ * horizontal a quatre largeurs d'iPhone.
  */
 const { spawn } = require('child_process');
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
@@ -69,17 +70,26 @@ const vrai = (nom, cond, detail) =>
   vrai('population chargee', NW > 200, 'W.length=' + NW);
 
   // ---------------------------------------------------------- 1. LES 5 ESPACES
-  etape = 'les cinq espaces';
-  vrai('cinq entrees de navigation',
-    (await js(`document.querySelectorAll('nav button').length`)) === 5, 'nav incomplete');
-  for (const [h, vue] of [['#/', 'v-jour'], ['#/rank', 'v-rank'], ['#/disco', 'v-disco'],
-                          ['#/watch', 'v-watch'], ['#/data', 'v-data']]) {
+  etape = 'les trois espaces';
+  vrai('trois entrees de navigation',
+    (await js(`document.querySelectorAll('nav button').length`)) === 3, 'nav incomplete');
+  for (const [h, vue] of [['#/', 'v-jour'], ['#/rank', 'v-rank'], ['#/data', 'v-data']]) {
     await va(h);
     vrai(`espace ${h} affiche`,
       await js(`document.getElementById('${vue}').classList.contains('on')`), 'vue absente');
     vrai(`espace ${h} rempli`,
       (await js(`document.getElementById('${vue}').textContent.trim().length`)) > 120, 'vide');
   }
+  // Deux espaces ont ete absorbes ; leurs adresses doivent continuer d'aboutir.
+  // Un lien mis en favori ne cesse pas d'exister parce qu'un onglet disparait.
+  await va('#/watch');
+  vrai('l ancienne adresse du suivi aboutit',
+    (await js(`document.getElementById('v-rank').classList.contains('on')`))
+    && (await js(`ETAT.filtre`)) === 'suivi', 'alias /watch perdu');
+  await va('#/disco');
+  vrai('l ancienne adresse de la decouverte aboutit',
+    await js(`document.getElementById('v-jour').classList.contains('on')`), 'alias /disco perdu');
+  await js(`document.querySelector('[data-f="ranked"]').click()`); await dodo(300);
 
   // ---------------------------------------------------------- 2. ACCUEIL
   etape = 'accueil';
@@ -91,8 +101,12 @@ const vrai = (nom, cond, detail) =>
   vrai('le contenu reel precede les sections vides', await js(`(() => {
     const t = document.getElementById('jour').innerHTML;
     const rien = t.indexOf('Rien à signaler');
-    const bloc = t.indexOf('class="blk"');
-    return rien < 0 || (bloc >= 0 && bloc < rien); })()`), 'ordre incorrect');
+    const plein = t.indexOf('class="li"');
+    return rien < 0 || (plein >= 0 && plein < rien); })()`), 'ordre incorrect');
+  vrai('les sections repliees nomment ce qui est vide', await js(`
+    [...document.querySelectorAll('#jour details.det')].every(d =>
+      d.querySelector('summary').textContent.trim().length > 3
+      && d.querySelector('.note').textContent.trim().length > 30)`), 'repli muet');
 
   // ---------------------------------------------------------- 3. CLASSEMENT
   etape = 'classement';
@@ -105,17 +119,28 @@ const vrai = (nom, cond, detail) =>
   const n0 = await js(`document.querySelectorAll('#liste .row').length`);
   vrai('premiere page rendue', n0 > 0 && n0 <= 24, 'lignes=' + n0);
 
-  vrai('chaque ligne porte les grandeurs exigees', await js(`(() => {
+  // CINQ grandeurs, pas quatorze. La refonte a deplace les neuf autres sur la
+  // fiche : ce que la ligne doit prouver, c'est qu'elle porte encore le rang,
+  // l'adresse, la mesure avec son rail, le volume et la fraicheur.
+  vrai('chaque ligne porte les cinq essentiels', await js(`(() => {
     const r = document.querySelector('#liste .row'), t = r.textContent;
-    return /N°/.test(t) && /IC /.test(t) && /qualité/.test(t) && /proba/.test(t)
-      && /tr\./.test(t) && /30j/.test(t) && /DD/.test(t)
-      && !!r.querySelector('svg.rail') && !!r.querySelector('.dv')
-      && !!r.querySelector('.bg'); })()`), 'ligne incomplete');
+    return !!r.querySelector('.no') && !!r.querySelector('.adr')
+      && !!r.querySelector('.sc') && !!r.querySelector('svg.rail')
+      && !!r.querySelector('.r2') && /trades/.test(t); })()`), 'ligne incomplete');
+
+  vrai('la ligne ne porte PLUS les grandeurs deplacees', await js(`(() => {
+    const t = document.querySelector('#liste .row').textContent;
+    return !/Drawdown|Profit factor|Concentration/.test(t); })()`), 'ligne encore chargee');
 
   vrai('un score ne parait JAMAIS sans son rail', await js(`
-    [...document.querySelectorAll('.sc')].every(s => s.closest('.row, .cadran'))
-    && [...document.querySelectorAll('#liste .row')].every(r =>
-         !r.querySelector('.sc') || r.querySelector('svg.rail'))`), 'score orphelin');
+    [...document.querySelectorAll('#liste .row')].every(r =>
+      !r.querySelector('.sc') || r.querySelector('svg.rail'))`), 'score orphelin');
+
+  // La provenance est une exception marquee, pas un badge sur chaque ligne :
+  // 262 mentions « Dérivé » identiques n'informeraient personne.
+  const nObsListe = await js(`W.filter(w => !!w.obs).length`);
+  vrai('la provenance ne marque que l exception', nObsListe > 0 && nObsListe < 20,
+    nObsListe + ' wallets observes');
 
   await js(`document.querySelector('[data-f="tous"]').click()`); await dodo(350);
   vrai('filtre Tous', (await js(`courant.length`)) === NW, 'tous=' + await js(`courant.length`));
@@ -181,6 +206,21 @@ const vrai = (nom, cond, detail) =>
   vrai('la copie donne un retour visuel',
     /copi|refus/i.test(await js(`document.getElementById('cp').textContent`)), 'aucun retour');
 
+  // REVELATION PROGRESSIVE : l'essentiel se lit sans rien ouvrir, le detail
+  // vient au toucher. Il faut donc verifier les DEUX etats.
+  const cvs0 = await js(`[...document.querySelectorAll('#v-wallet canvas')]
+    .filter(c => c.getBoundingClientRect().width > 0).length`);
+  vrai('la fiche fermee reste legere', cvs0 <= 3, cvs0 + ' graphiques dessines d emblee');
+  vrai('le detail est annonce, pas cache', await js(`(() => {
+    const d = document.getElementById('plus');
+    return !!d && !d.open && /Tout voir/.test(d.textContent); })()`), 'repli absent');
+  vrai('les mesures secondaires sont bien repliees',
+    await js(`document.getElementById('reste').hidden === true`), 'deja visible');
+  await js(`(() => { const d = document.getElementById('plus');
+    d.open = true; d.dispatchEvent(new Event('toggle')); })()`);
+  await dodo(700);
+  vrai('l ouverture revele les mesures',
+    await js(`document.getElementById('reste').hidden === false`), 'reste masque');
   const cvs = await js(`[...document.querySelectorAll('#v-wallet canvas')]
     .map(c => c.width + 'x' + c.height)`);
   vrai('au moins 6 graphiques dessines', cvs.length >= 6, 'canvas=' + cvs.length);
@@ -212,9 +252,18 @@ const vrai = (nom, cond, detail) =>
     'valeur inventee');
 
   vrai('la provenance est etiquetee',
-    (await js(`document.querySelectorAll('#v-wallet .bg').length`)) >= 2, 'badges absents');
+    (await js(`document.querySelectorAll('#v-wallet .bg').length`)) >= 1, 'badges absents');
+  vrai('la provenance est expliquee, pas seulement etiquetee', await js(`
+    /Dérivé|Observé/.test(document.querySelector('#v-wallet .prot h4').textContent)`),
+    'aucune explication de provenance');
   vrai('explication du classement presente',
-    (await js(`document.querySelectorAll('#v-wallet .why').length`)) > 0, 'aucune explication');
+    (await js(`document.querySelectorAll('#v-wallet .wl').length`)) > 0, 'aucune explication');
+  vrai('le drawdown affiche vient de la courbe deduite', await js(`(() => {
+    const w = byA[location.hash.slice(4)];
+    const c = drawdown(w);
+    if (!c.length || w.dd == null) return true;
+    return Math.abs(Math.max(...c.map(p => -p[1])) - w.dd) < 0.03; })()`),
+    'deduction infidele');
   vrai('aucun emoji dans la fiche',
     !(await js(`document.getElementById('v-wallet').innerHTML`))
       .match(/[\u{1F300}-\u{1FAFF}]/u), 'emoji trouve');
@@ -226,18 +275,33 @@ const vrai = (nom, cond, detail) =>
   vrai('suivi persiste',
     (await js(`JSON.parse(localStorage.getItem('ht.watch')).length`)) === 1, 'non persiste');
   await js(`WATCH.push(W[0].a === WATCH[0] ? W[1].a : W[0].a); majWatch()`);
-  await va('#/watch');
-  vrai('la watchlist affiche les wallets suivis',
-    (await js(`document.querySelectorAll('#wl .row').length`)) === 2, 'affichage incorrect');
+  // Le suivi n'est plus un espace : c'est un filtre du classement. Rien n'est
+  // perdu — l'ecran retrecit, la fonction reste entiere.
+  await va('#/rank');
+  await js(`document.querySelector('[data-f="suivi"]').click()`); await dodo(450);
+  vrai('le suivi est un filtre du classement',
+    (await js(`document.querySelectorAll('#liste .row').length`)) === 2, 'affichage incorrect');
+  vrai('le suivi s ordonne selon le choix de l utilisateur',
+    (await js(`ETAT.tri`)) === 'mien', 'tri=' + await js(`ETAT.tri`));
+  vrai('l ordre affiche EST l ordre enregistre',
+    await js(`[...document.querySelectorAll('#liste .row')].map(r => r.dataset.a)
+      .join(',') === WATCH.join(',')`), 'ordre affiche different de WATCH');
   const av = await js(`WATCH.join(',')`);
-  await js(`document.querySelectorAll('#wl [data-mv]')[1].click()`); await dodo(350);
+  await js(`document.querySelectorAll('#liste [data-mv]')[1].click()`); await dodo(400);
   vrai('reordonnancement du suivi', (await js(`WATCH.join(',')`)) !== av, 'ordre inchange');
-  await js(`document.querySelectorAll('#wl [data-rm]')[0].click()`); await dodo(350);
+  await js(`document.querySelectorAll('#liste [data-rm]')[0].click()`); await dodo(400);
   vrai('retrait du suivi', (await js(`WATCH.length`)) === 1, 'non retire');
+  // Les commandes de reordonnancement n'apparaissent QUE sous ce filtre : une
+  // commande qui ne sert que la n'a pas a peser sur les 267 autres releves.
+  await js(`document.querySelector('[data-f="tous"]').click()`); await dodo(400);
+  vrai('les commandes de suivi restent dans leur filtre',
+    (await js(`document.querySelectorAll('#liste [data-mv]').length`)) === 0,
+    'commandes hors contexte');
 
   // ---------------------------------------------------------- 6. RETOUR
   etape = 'retour sans perte de contexte';
   await va('#/rank');
+  await js(`document.querySelector('[data-f="tous"]').click()`); await dodo(350);
   await js(`window.scrollTo(0, 800)`); await dodo(400);
   const sc2 = await js(`window.scrollY`);
   await js(`document.querySelectorAll('#liste .row')[1].click()`); await dodo(900);
@@ -252,10 +316,11 @@ const vrai = (nom, cond, detail) =>
   // ---------------------------------------------------------- 7. ETATS VIDES
   etape = 'etats vides';
   await js(`WATCH.length = 0; majWatch()`);
-  await va('#/watch');
-  vrai('watchlist vide explicite',
-    (await js(`document.querySelectorAll('#wl .empty').length`)) === 1, 'etat vide absent');
   await va('#/rank');
+  await js(`document.querySelector('[data-f="suivi"]').click()`); await dodo(450);
+  vrai('suivi vide explicite',
+    (await js(`document.querySelectorAll('#liste .empty').length`)) === 1, 'etat vide absent');
+  await js(`document.querySelector('[data-f="tous"]').click()`); await dodo(350);
   await js(`(() => { const q = document.getElementById('q');
     q.value = 'zzzzzzintrouvable'; q.dispatchEvent(new Event('input')); })()`);
   await dodo(400);
