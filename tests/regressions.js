@@ -301,6 +301,122 @@ const vrai = (nom, cond, detail) =>
       .every(l => !!l.querySelector('.mk.n') === (byA[l.dataset.a].promu != null))`),
     'marque absente dans au moins une section');
 
+  // ══════════════════════════════════════════════ A1 — contraste mesure
+  // Pas de jeton relu a la main : on parcourt le DOM RENDU, on remonte au
+  // premier fond opaque reel et on applique la formule WCAG. Un audit qui lit
+  // la feuille de style ne voit pas ce que l'oeil voit.
+  etape = 'A1 contraste WCAG';
+  const AUDIT_CONTRASTE = `(() => {
+    const lin = c => { c /= 255; return c <= 0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); };
+    const L = ([r,g,b]) => 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b);
+    const rgb = s => { const m = String(s).match(/[\\d.]+/g); return m ? m.slice(0,3).map(Number) : null; };
+    const alpha = s => { const m = String(s).match(/[\\d.]+/g); return m && m.length > 3 ? +m[3] : 1; };
+    const melange = (fg, bg, a) => fg.map((v,i) => v*a + bg[i]*(1-a));
+    const fondDe = el => {
+      let n = el;
+      while (n && n !== document.documentElement) {
+        const s = getComputedStyle(n), c = rgb(s.backgroundColor);
+        if (c && alpha(s.backgroundColor) > 0.9) return c;
+        n = n.parentElement;
+      }
+      return rgb(getComputedStyle(document.body).backgroundColor) || [0,0,0];
+    };
+    const ratio = (a, b) => { const la = L(a), lb = L(b);
+      return (Math.max(la,lb) + 0.05) / (Math.min(la,lb) + 0.05); };
+    const mauvais = [];
+    document.querySelectorAll('*').forEach(el => {
+      if (!el.offsetParent && getComputedStyle(el).position !== 'fixed') return;
+      const s = getComputedStyle(el);
+      if (s.visibility === 'hidden' || +s.opacity === 0) return;
+      // On ne mesure QUE les elements qui portent eux-memes du texte visible.
+      const propre = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim());
+      if (!propre) return;
+      const fg = rgb(s.color);
+      if (!fg || alpha(s.color) < 0.05) return;      // texte volontairement invisible
+      const bg = fondDe(el);
+      const px = parseFloat(s.fontSize), gras = +s.fontWeight >= 600;
+      const seuil = (px >= 24 || (px >= 18.66 && gras)) ? 3 : 4.5;
+      const r = ratio(alpha(s.color) < 1 ? melange(fg, bg, alpha(s.color)) : fg, bg);
+      if (r < seuil - 0.005) mauvais.push({
+        t: el.tagName.toLowerCase() + '.' + String(el.className || '').split(' ')[0],
+        px: Math.round(px * 10) / 10, r: Math.round(r * 100) / 100, seuil,
+        txt: el.textContent.trim().slice(0, 24) });
+    });
+    return mauvais;
+  })()`;
+  // L'audit doit d'abord prouver QU'IL MESURE. Sans cette sentinelle, une
+  // expression cassee rend « 0 defaut » et se lit comme une reussite — c'est
+  // exactement ce qui est arrive ici.
+  const sentinelle = await js(`(() => {
+    const d = document.createElement('div');
+    d.style.cssText = 'color:#4C5D6B;font-size:11px;position:fixed;top:0;left:0';
+    d.textContent = 'sentinelle';
+    document.body.appendChild(d);
+    return d; })() && ${AUDIT_CONTRASTE}.filter(x => x.txt === 'sentinelle').length`);
+  await js(`[...document.querySelectorAll('div')].filter(d=>d.textContent==='sentinelle'
+    && d.style.position==='fixed').forEach(d=>d.remove())`);
+  vrai('l’audit de contraste sait détecter un texte fautif',
+    sentinelle === 1, 'la sentinelle à 2,84:1 est passée inaperçue : audit inopérant');
+
+  for (const h of ['#/', '#/rank', '#/data']) {
+    await va(h, 800);
+    const m = await js(AUDIT_CONTRASTE);
+    vrai(`contraste AA sur ${h}`, m.length === 0,
+      m.slice(0, 4).map(x => `${x.t} ${x.px}px ${x.r}:1 < ${x.seuil} « ${x.txt} »`).join(' | '));
+  }
+  await va('#/w/' + trois[0], 900);
+  await js(`(()=>{const d=document.getElementById('plus');
+    d.open=true; d.dispatchEvent(new Event('toggle'));})()`);
+  await dodo(700);
+  const mFiche = await js(AUDIT_CONTRASTE);
+  vrai('contraste AA sur la fiche, panneau ouvert', mFiche.length === 0,
+    mFiche.slice(0, 4).map(x => `${x.t} ${x.px}px ${x.r}:1 « ${x.txt} »`).join(' | '));
+
+  // ══════════════════════════════════════════════ A2 — cibles tactiles
+  // 44 px, pas 32 : c'est le minimum que les deux plateformes recommandent, et
+  // la legende de qualite — qui est AUSSI un filtre — n'en faisait que 21.
+  etape = 'A2 cibles tactiles 44 px';
+  const AUDIT_CIBLES = `[...document.querySelectorAll(
+      'button, input, select, [role="button"], a[href]')]
+    .filter(e => { const s = getComputedStyle(e);
+      if (s.visibility === 'hidden' || s.display === 'none') return false;
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && (r.height < 43.5 || r.width < 43.5); })
+    .map(e => e.tagName.toLowerCase() + '.' + String(e.className||'').split(' ')[0]
+      + ' ' + Math.round(e.getBoundingClientRect().width) + 'x'
+      + Math.round(e.getBoundingClientRect().height))`;
+  for (const [larg, nom] of [[320, 'iPhone SE'], [390, 'iPhone 13']]) {
+    await metrique(larg, 844);
+    for (const h of ['#/', '#/rank']) {
+      await va(h, 700);
+      const c = await js(AUDIT_CIBLES);
+      vrai(`cibles tactiles ≥ 44 px — ${nom} ${h}`, c.length === 0,
+        [...new Set(c)].slice(0, 5).join(' | '));
+    }
+  }
+  await metrique(390, 844);
+
+  // ══════════════════════════════════════════════ A4 — le défilement se voit
+  etape = 'A4 affordance de défilement';
+  await va('#/rank', 700);
+  vrai('les bandes qui défilent le montrent',
+    await js(`[...document.querySelectorAll('.chips')].every(c => {
+      const s = getComputedStyle(c);
+      return /gradient/.test(s.maskImage || s.webkitMaskImage || ''); })`),
+    'aucun fondu au bord');
+  vrai('elles débordent bien — sinon le contrôle ne prouverait rien',
+    await js(`[...document.querySelectorAll('.chips')].some(c => c.scrollWidth > c.clientWidth + 4)`),
+    'tout tient a l ecran');
+
+  // ══════════════════════════════════════════════ A5 — en-tête opaque
+  etape = 'A5 en-tête opaque';
+  vrai('rien ne transparaît derrière l’en-tête ni la navigation',
+    await js(`['header','nav'].every(t => {
+      const s = getComputedStyle(document.querySelector(t)).backgroundColor;
+      const m = String(s).match(/[\\d.]+/g);
+      return m && (m.length < 4 || +m[3] >= 0.999); })`),
+    'fond translucide : le flou n’est pas garanti par tous les moteurs');
+
   console.log('\n=== VERT (' + vert.length + ') ===');
   vert.forEach(v => console.log('  OK  ' + v));
   if (rouge.length) {

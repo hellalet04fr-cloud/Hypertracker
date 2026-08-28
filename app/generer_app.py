@@ -79,11 +79,16 @@ TPL = r"""<title>HyperTracker</title>
   --filet:#1C222A;          /* separateur — la seule bordure de l'application */
 
   /* --- encres --- */
-  --texte:#E6EAED;
-  --clair:#FBFCFD;          /* les mesures majeures                          */
-  --gris:#6E8697;           /* echelle, incertitude, libelles                */
-  --mors:#6E8697;           /* TRAITS de l'instrument, jamais du texte       */
-  --faible:#4C5D6B;         /* second plan                                   */
+  --texte:#E6EAED;          /* 15,99:1                                      */
+  --clair:#FBFCFD;          /* les mesures majeures — 18,84:1                */
+  /* TEXTE. Tous conformes AA (4,5:1) sur --fond ET sur --creux. */
+  --gris:#93A5B1;           /* texte secondaire — 7,61 / 7,26                */
+  --faible:#78909F;         /* texte tertiaire  — 5,80 / 5,53                */
+  /* TRAITS. Non textuels : ils ne portent aucun mot et ne suivent donc pas la
+     contrainte de lisibilite du texte. Valeurs inchangees a dessein — c'est le
+     dessin de l'instrument, valide a l'ecran. */
+  --mors:#6E8697;           /* machoires du pied a coulisse, courbes         */
+  --trait:#4C5D6B;          /* graduations, axes, hachures                   */
 
   /* --- UNE couleur. L'ambre ne designe QUE l'estimation ponctuelle : le
          reserver a cela seul la rend impossible a manquer. Le rouge ne sert
@@ -114,14 +119,13 @@ body{
   font-variant-numeric:tabular-nums}
 
 /* --- le seul style de libelle de l'application --- */
-.lab{font:400 10px/1.4 "DM Mono",monospace;letter-spacing:.14em;
+.lab{font:400 11px/1.4 "DM Mono",monospace;letter-spacing:.14em;
      text-transform:uppercase;color:var(--faible)}
 
 /* ════════════════════════════════════════════════════════ ossature */
 #app{padding-bottom:calc(var(--nav) + var(--e5));min-height:100vh}
 .wrap{padding-left:var(--marge);padding-right:var(--marge-d)}
-header{position:sticky;top:0;z-index:60;background:rgba(11,14,17,.92);
-  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+header{position:sticky;top:0;z-index:60;background:var(--fond);
   padding-top:env(safe-area-inset-top)}
 .hrow{display:flex;align-items:baseline;gap:var(--e3);min-height:52px;
   padding:var(--e3) var(--marge-d) var(--e3) var(--marge)}
@@ -189,7 +193,7 @@ header{position:sticky;top:0;z-index:60;background:rgba(11,14,17,.92);
 
 /* --- provenance : un POINT, pas un badge. 262 badges identiques seraient du
        bruit ; seule l'exception — 5 wallets sur 267 — se marque. --- */
-.bg{flex:0 0 auto;font:400 9.5px/1.4 "DM Mono",monospace;letter-spacing:.1em;
+.bg{flex:0 0 auto;font:400 11px/1.4 "DM Mono",monospace;letter-spacing:.1em;
   text-transform:uppercase;color:var(--faible)}
 .bg.obs{color:var(--index)}
 /* L'inactivite recoit la MEME force visuelle que la provenance : un signe, pas
@@ -208,23 +212,31 @@ header{position:sticky;top:0;z-index:60;background:rgba(11,14,17,.92);
 /* ════════════════════════════════════════════════════════ controles */
 .srch{position:relative;margin:0 0 var(--e1)}
 .srch input{width:100%;background:transparent;border:0;border-bottom:1px solid var(--filet);
-  padding:var(--e3) 34px var(--e3) 0;color:var(--clair);
+  padding:var(--e3) 44px var(--e3) 0;color:var(--clair);
   font:400 15px/1 "DM Mono",monospace;outline:none;min-height:48px}
 .srch input::placeholder{color:var(--faible);font-family:"Instrument Sans",sans-serif}
 .srch input:focus{border-bottom-color:var(--gris)}
-.srch .clr{position:absolute;right:0;top:0;bottom:0;width:34px;border:0;background:none;
+.srch .clr{position:absolute;right:0;top:0;bottom:0;width:44px;border:0;background:none;
   color:var(--gris);font-size:20px;cursor:pointer;display:none}
 .srch.has .clr{display:block}
 
-.chips{display:flex;gap:var(--e5);overflow-x:auto;scrollbar-width:none;
+.chips{display:flex;gap:var(--e3);overflow-x:auto;scrollbar-width:none;
   padding:var(--e2) var(--marge-d) var(--e3) var(--marge);
   -webkit-overflow-scrolling:touch}
 .chips::-webkit-scrollbar{display:none}
+/* Le fondu au bord droit est la seule chose qui dise « ca continue ». Sans lui,
+   une pastille coupee net ressemble a une pastille qui finit la. */
+.chips{mask-image:linear-gradient(90deg,#000 88%,transparent);
+  -webkit-mask-image:linear-gradient(90deg,#000 88%,transparent)}
 /* Un filtre actif n'est pas une pastille : c'est un mot souligne. */
-.chip{flex:0 0 auto;background:none;border:0;padding:var(--e2) 0;cursor:pointer;
+/* 36 -> 44 px, et une largeur minimale : « Tous » ne faisait que 25 px. Le
+   rembourrage horizontal remplace une partie de l'ecart entre pastilles, qui
+   passe donc de 28 a 12 px pour conserver le rythme. */
+.chip{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
+  background:none;border:0;padding:var(--e2) 10px;cursor:pointer;
   white-space:nowrap;color:var(--faible);font:400 12px/1.2 "Instrument Sans",sans-serif;
   border-bottom:1px solid transparent;transition:color .12s,border-color .12s;
-  min-height:36px}
+  min-height:44px;min-width:44px}
 .chip.on{color:var(--clair);border-bottom-color:var(--index)}
 .chips .lab{flex:0 0 auto;align-self:center;padding-right:var(--e1)}
 
@@ -257,8 +269,8 @@ header{position:sticky;top:0;z-index:60;background:rgba(11,14,17,.92);
 
 .btn{flex:0 0 auto;background:none;border:1px solid var(--filet);border-radius:1px;
   color:var(--gris);padding:var(--e3) var(--e4);cursor:pointer;
-  font:400 10px/1 "DM Mono",monospace;letter-spacing:.12em;text-transform:uppercase;
-  transition:color .15s,border-color .15s,background .15s;min-height:42px}
+  font:400 11px/1 "DM Mono",monospace;letter-spacing:.12em;text-transform:uppercase;
+  transition:color .15s,border-color .15s,background .15s;min-height:44px}
 .btn.on,.btn.ok{background:var(--index);border-color:var(--index);color:var(--fond)}
 .btn:active{border-color:var(--gris)}
 
@@ -280,7 +292,7 @@ header{position:sticky;top:0;z-index:60;background:rgba(11,14,17,.92);
   font-variant-numeric:tabular-nums}
 .vern{display:flex;gap:3px;margin-top:var(--e3);max-width:120px}
 .vern i{flex:1;height:2px;background:var(--filet);display:block}
-.vern i.f{background:var(--gris)}
+.vern i.f{background:var(--mors)}
 .apparat{margin:var(--e3) 0 0;font:400 italic 13px/1.5 "Instrument Sans",sans-serif;
   color:var(--faible)}
 
@@ -352,7 +364,7 @@ header{position:sticky;top:0;z-index:60;background:rgba(11,14,17,.92);
   border-bottom:1px solid var(--filet)}
 .band>div{flex:1}
 .band>div.vd{flex:1.6}
-.band .lab{margin-bottom:var(--e1);font-size:9px;letter-spacing:.1em;
+.band .lab{margin-bottom:var(--e1);font-size:10px;letter-spacing:.08em;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .band .v{font:500 22px/1 "DM Mono",monospace;color:var(--clair);
   font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;
@@ -362,6 +374,7 @@ header{position:sticky;top:0;z-index:60;background:rgba(11,14,17,.92);
 /* liste compacte, meme grammaire que le releve */
 .li{display:flex;align-items:baseline;gap:var(--e3);padding:var(--e3) 0;
   border-bottom:1px solid var(--filet);cursor:pointer;min-height:44px}
+.li .mk{align-self:center}
 .li:active{opacity:.55}
 .li .no{flex:0 0 auto;font:400 10px/1 "DM Mono",monospace;color:var(--faible)}
 .li .adr{flex:0 0 auto;font-size:12px;color:var(--gris)}
@@ -384,14 +397,15 @@ header{position:sticky;top:0;z-index:60;background:rgba(11,14,17,.92);
 
 /* la convention : legende, repartition et filtre en un seul objet */
 .conv{display:flex;gap:var(--e4);padding:var(--e2) var(--marge-d) var(--e4) var(--marge)}
-.cseg{flex:1 1 0;padding:0;background:none;border:0;cursor:pointer;text-align:left;
-  min-width:60px}
-.cseg i{display:block;height:0;border-top:1px var(--gris);margin-bottom:var(--e2)}
+/* 21 -> 45 px. C'est un controle, pas une legende : il se touche. */
+.cseg{flex:1 1 0;padding:12px 0;background:none;border:0;cursor:pointer;
+  text-align:left;min-width:60px;min-height:44px}
+.cseg i{display:block;height:0;border-top:1px var(--mors);margin-bottom:var(--e2)}
 .cseg.s i{border-top-style:solid}
 .cseg.d i{border-top-style:dashed}
 .cseg.p i{border-top-style:dotted}
 .cseg.on i{border-top-color:var(--index);border-top-width:2px}
-.cseg span{display:block;font:400 9.5px/1.3 "DM Mono",monospace;letter-spacing:.06em;
+.cseg span{display:block;font:400 11px/1.3 "DM Mono",monospace;letter-spacing:.06em;
   text-transform:uppercase;color:var(--faible);white-space:nowrap}
 .cseg.on span{color:var(--index)}
 
@@ -400,8 +414,7 @@ header{position:sticky;top:0;z-index:60;background:rgba(11,14,17,.92);
    repond a la meme question que « Aujourd'hui » : les fondre ne retire aucune
    fonction, seulement de la surface. */
 nav{position:fixed;left:0;right:0;bottom:0;z-index:70;display:grid;
-  grid-template-columns:repeat(3,minmax(0,1fr));background:rgba(11,14,17,.95);
-  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  grid-template-columns:repeat(3,minmax(0,1fr));background:var(--fond);
   border-top:1px solid var(--filet);padding-bottom:env(safe-area-inset-bottom)}
 nav button{background:none;border:0;color:var(--faible);padding:var(--e4) var(--e2);
   cursor:pointer;font:400 11px/1 "Instrument Sans",sans-serif;letter-spacing:.02em;
@@ -910,14 +923,14 @@ function courbe(cv, pts, opt) {
   const PY = v => pad + (1 - (v - y0) / (y1 - y0)) * (h - 2 * pad - 14);
   const dessine = hl => {
     c.clearRect(0, 0, w, h);
-    c.setLineDash([1, 3]); c.strokeStyle = css('--faible'); c.lineWidth = 1;
+    c.setLineDash([1, 3]); c.strokeStyle = css('--trait'); c.lineWidth = 1;
     c.beginPath(); c.moveTo(pad, PY(0)); c.lineTo(w - pad, PY(0)); c.stroke();
     c.setLineDash([]);
     if (pts.some(p => p[1] < 0)) {
       c.save(); c.beginPath(); c.moveTo(PX(0), PY(0));
       pts.forEach((p, i) => c.lineTo(PX(i), PY(Math.min(0, p[1]))));
       c.lineTo(PX(pts.length - 1), PY(0)); c.closePath(); c.clip();
-      c.strokeStyle = css('--gris'); c.globalAlpha = .18; c.lineWidth = 1;
+      c.strokeStyle = css('--mors'); c.globalAlpha = .18; c.lineWidth = 1;
       for (let i = -h; i < w + h; i += 5) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i + h, h); c.stroke(); }
       c.restore();
     }
@@ -957,7 +970,7 @@ function barres(cv, etiq, vals, opt) {
     for (let i = 0; i < n; i++) {
       const bh = (vals[i] / mx) * (base - 4), x = pad + i * bw, y = base - bh;
       c.fillStyle = (i === hl || (opt.plein != null && i === opt.plein && hl == null))
-        ? css('--index') : css('--gris');
+        ? css('--index') : css('--mors');
       c.globalAlpha = (i === hl || (opt.plein != null && i === opt.plein && hl == null)) ? 1 : .42;
       c.fillRect(x, y, Math.max(1, bw - 1.5), Math.max(1, bh));
       c.globalAlpha = 1;
@@ -991,7 +1004,7 @@ function frise(cv, pts, opt) {
                               : pad + (1 - (v - y0) / (y1 - y0)) * (h - 2 * pad - 14);
   const dessine = hl => {
     c.clearRect(0, 0, w, h);
-    c.strokeStyle = css('--gris'); c.lineWidth = 1; c.beginPath();
+    c.strokeStyle = css('--mors'); c.lineWidth = 1; c.beginPath();
     pts.forEach((p, i) => i ? c.lineTo(PX(i), PY(p[1])) : c.moveTo(PX(i), PY(p[1])));
     c.stroke();
     c.fillStyle = css('--index');
@@ -1016,7 +1029,7 @@ function nuage(cv, cible) {
     c.beginPath(); c.moveTo(PX(g), PY(0)); c.lineTo(PX(g), PY(100)); c.stroke();
     c.beginPath(); c.moveTo(PX(0), PY(g)); c.lineTo(PX(100), PY(g)); c.stroke();
   }
-  c.fillStyle = css('--gris'); c.globalAlpha = .5;
+  c.fillStyle = css('--mors'); c.globalAlpha = .5;
   W.filter(x => x.conf != null).forEach(x => {
     c.beginPath(); c.arc(PX(x.score), PY(x.conf), 1.6, 0, 6.284); c.fill();
   });
@@ -1035,11 +1048,11 @@ function nuage(cv, cible) {
 function cadran(cv, w0) {
   const [c, w, h] = ctx2d(cv, 132);
   const pad = 6, PY = v => h - pad - (v / 100) * (h - 2 * pad);
-  c.strokeStyle = css('--gris'); c.globalAlpha = .13; c.lineWidth = 1;
+  c.strokeStyle = css('--mors'); c.globalAlpha = .13; c.lineWidth = 1;
   W.forEach(x => { c.beginPath(); c.moveTo(w - 17, PY(x.score)); c.lineTo(w - 8, PY(x.score)); c.stroke(); });
   c.globalAlpha = 1;
   const dash = { elevee: [], moyenne: [3, 2], faible: [1, 3] }[w0.conf_lab] || [];
-  c.strokeStyle = css('--gris'); c.lineWidth = 1; c.setLineDash(dash);
+  c.strokeStyle = css('--mors'); c.lineWidth = 1; c.setLineDash(dash);
   c.beginPath(); c.moveTo(w - 26, PY(w0.ic[0])); c.lineTo(w - 26, PY(w0.ic[1])); c.stroke();
   c.setLineDash([]);
   [w0.ic[0], w0.ic[1]].forEach(v => {
@@ -1091,11 +1104,11 @@ function retrecissement(w) {
   const y = 20, a = X(w.sr), b = X(w.post), z = X(0), p = [];
   p.push(`<line x1="${pad}" y1="${y}" x2="${L - pad}" y2="${y}" stroke="var(--filet)" stroke-width="1"/>`);
   p.push(`<line x1="${z}" y1="${y - 5}" x2="${z}" y2="${y + 5}" stroke="var(--filet)" stroke-width="1"/>`);
-  p.push(`<text x="${z}" y="${H - 1}" fill="var(--faible)" font-size="9"
+  p.push(`<text x="${z}" y="${H - 1}" fill="var(--faible)" font-size="10"
           font-family="DM Mono, monospace" text-anchor="middle">${ECHELLE[0]}</text>`);
-  p.push(`<line x1="${a}" y1="${y}" x2="${b}" y2="${y}" stroke="var(--gris)" stroke-width="1"/>`);
-  p.push(`<circle cx="${a}" cy="${y}" r="3" fill="none" stroke="var(--gris)" stroke-width="1"/>`);
-  p.push(`<line x1="${a - 4}" y1="${y + 4}" x2="${a + 4}" y2="${y - 4}" stroke="var(--gris)" stroke-width="1"/>`);
+  p.push(`<line x1="${a}" y1="${y}" x2="${b}" y2="${y}" stroke="var(--mors)" stroke-width="1"/>`);
+  p.push(`<circle cx="${a}" cy="${y}" r="3" fill="none" stroke="var(--mors)" stroke-width="1"/>`);
+  p.push(`<line x1="${a - 4}" y1="${y + 4}" x2="${a + 4}" y2="${y - 4}" stroke="var(--mors)" stroke-width="1"/>`);
   p.push(`<line x1="${b}" y1="${y - 8}" x2="${b}" y2="${y + 8}" stroke="var(--index)" stroke-width="1"/>`);
   const d = w.post - w.sr;
   p.push(`<text x="${(a + b) / 2}" y="${y - 10}" fill="var(--texte)" font-size="10"
@@ -1362,7 +1375,7 @@ function redessineFiche() {
 function tracesSecondaires(el, w) {
   if (el._tracees) return;
   el._tracees = true;
-  courbe(el.querySelector('#g2'), drawdown(w), { h: 120, couleur: css('--gris') });
+  courbe(el.querySelector('#g2'), drawdown(w), { h: 120, couleur: css('--mors') });
   const m = w.m || [];
   barres(el.querySelector('#g3'), m.map(x => x[0]), m.map(x => x[2]), { h: 110, suffixe: ' trades' });
   const hi = w.hist;

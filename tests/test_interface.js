@@ -362,8 +362,8 @@ const vrai = (nom, cond, detail) =>
   await va('#/rank');
   const petits = await js(`[...document.querySelectorAll('nav button, .chip, .btn')]
     .filter(e => { const r = e.getBoundingClientRect();
-      return r.height > 0 && r.height < 32; }).length`);
-  vrai('zones tactiles >= 32px', petits === 0, petits + ' elements trop petits');
+      return r.height > 0 && r.height < 43.5; }).length`);
+  vrai('zones tactiles >= 44px', petits === 0, petits + ' elements trop petits');
   vrai('les rails ont un role et un libelle', await js(`
     [...document.querySelectorAll('svg.rail')].every(s =>
       s.getAttribute('role') === 'img' && !!s.getAttribute('aria-label'))`), 'libelle absent');

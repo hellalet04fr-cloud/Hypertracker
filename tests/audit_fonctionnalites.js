@@ -463,8 +463,8 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
   section = 'Accessibilité';
   await va('#/rank');
   const petits = await js(`[...document.querySelectorAll('nav button,.chip,.btn,.li,.row')]
-    .filter(e=>{const r=e.getBoundingClientRect();return r.height>0&&r.height<32;}).length`);
-  dit(petits === 0 ? 'OK' : 'KO', 'zones tactiles ≥ 32 px', `${petits} trop petites`);
+    .filter(e=>{const r=e.getBoundingClientRect();return r.height>0&&r.height<43.5;}).length`);
+  dit(petits === 0 ? 'OK' : 'KO', 'zones tactiles ≥ 44 px', `${petits} trop petites`);
   dit(await js(`[...document.querySelectorAll('svg.rail')]
     .every(s=>s.getAttribute('role')==='img'&&!!s.getAttribute('aria-label'))`) ? 'OK' : 'KO',
       'rails décrits pour les lecteurs d’écran');
