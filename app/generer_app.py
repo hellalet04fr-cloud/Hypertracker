@@ -54,7 +54,11 @@ SORTIE = os.environ.get("HT_APP_OUT", os.path.join(D, "app.html"))
 
 DATA = json.load(open(os.path.join(D, "app_data.json")))
 _rep = os.path.join(D, "reputation_data.json")
-REP = json.load(open(_rep)) if os.path.exists(_rep) else {"meta": {}, "wallets": []}
+_brut = json.load(open(_rep)) if os.path.exists(_rep) else {"meta": {}, "wallets": []}
+# RESUME SEUL. Le document complet pese 160 Ko et la page n'en lit que trois
+# compteurs. Les 315 fiches restent sur disque pour qui veut les auditer ; elles
+# n'ont aucune raison d'etre payees par chaque lecteur de la page.
+REP = {"meta": _brut.get("meta", {}), "n_wallets": len(_brut.get("wallets", []))}
 
 
 TPL = r"""<title>HyperTracker</title>
@@ -312,7 +316,9 @@ header{position:sticky;top:0;z-index:60;background:var(--fond);
 /* --- puits de trace : la seule surface elevee de l'application --- */
 .well{background:var(--creux);padding:var(--e4) var(--e3) var(--e2);position:relative;
   touch-action:pan-y;margin-top:var(--e2)}
-.well canvas{display:block;width:100%}
+/* Le canvas prend la main sur le geste : sans cela le navigateur interprete le
+   suivi de l'infobulle comme un defilement et les deux se disputent le doigt. */
+.well canvas{display:block;width:100%;touch-action:none}
 .tip{position:absolute;top:var(--e2);pointer-events:none;opacity:0;transition:opacity .1s;
   background:var(--fond);padding:var(--e2) var(--e3);color:var(--clair);
   font:400 12px/1.5 "DM Mono",monospace;white-space:nowrap;z-index:5}
@@ -358,6 +364,11 @@ header{position:sticky;top:0;z-index:60;background:var(--fond);
   font:400 10px/1.8 "DM Mono",monospace;letter-spacing:.1em;text-transform:uppercase;
   color:var(--faible)}
 .pied b{color:var(--index);font-weight:400}
+/* L'age d'une donnee est une mesure, pas une decoration : au-dela du seuil il
+   change de couleur, parce qu'a ce moment-la il change de sens. */
+.age{display:block;margin-top:2px;font:400 11px/1.4 "DM Mono",monospace;
+  color:var(--faible)}
+.age.vieux{color:var(--alerte)}
 
 /* bandeau : quatre nombres, aucune boite */
 .band{display:flex;gap:var(--e4);padding:0 var(--marge-d) var(--e4) var(--marge);
@@ -447,7 +458,7 @@ nav button.on::before{content:"";position:absolute;top:0;left:50%;
   <div class="wrap">
     <div class="srch" id="sbox">
       <input id="q" type="search" inputmode="search" autocomplete="off" autocapitalize="off"
-             spellcheck="false" placeholder="Rechercher une adresse"
+             spellcheck="false" placeholder="Adresse, actif, rang ou bande"
              aria-label="Rechercher une adresse ou un actif">
       <button class="clr" id="qc" aria-label="Effacer">×</button>
     </div>
@@ -477,6 +488,11 @@ nav button.on::before{content:"";position:absolute;top:0;left:50%;
 const DB = %%DATA%%;
 const RP = %%REP%%;
 const W = DB.wallets, META = DB.meta;
+/* Table des phrases repetees. Un element de `forts`, `faibles` ou `risques` est
+   soit une chaine — phrase unique a ce wallet — soit un index dans LIB. Les
+   REGLES qui produisent ces phrases vivent en un seul endroit, cote generateur. */
+const LIB = DB.lib || [];
+const texte = x => typeof x === 'number' ? (LIB[x] ?? '') : x;
 const DAILY = DB.daily || null;
 const byA = Object.fromEntries(W.map(w => [w.a, w]));
 
@@ -500,6 +516,9 @@ const usdb = v => v == null ? NA : '$' + Math.abs(v).toLocaleString('fr-FR',
   {maximumFractionDigits: Math.abs(v) >= 10 ? 0 : 2});
 const pc = (v, d = 0) => v == null ? NA : v.toFixed(d) + ' %';
 const court = a => a.slice(0, 6) + '…' + a.slice(-4);
+/* Une adresse se compare sur ce qu'elle EST, pas sur la facon dont on l'a
+   ecrite : espaces, majuscules et ponctuation disparaissent des deux cotes. */
+const norm = t => String(t).toLowerCase().replace(/[^0-9a-z]/g, '');
 /* Les textes du moteur sont des fragments d'audit : ils ne se terminent pas par
    un point et se collaient a la phrase suivante. */
 const phrase = t => { const x = String(t || '').trim();
@@ -514,11 +533,30 @@ const date = t => t ? new Date(t).toLocaleDateString('fr-FR',
   {day: '2-digit', month: 'short', year: '2-digit'}) : NA;
 const dateh = t => t ? new Date(t).toLocaleString('fr-FR',
   {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'}) : NA;
+/* AGE RELATIF, calcule a la lecture. Une page statique est consultee longtemps
+   apres avoir ete produite : une date absolue dit « quand », jamais « est-ce
+   encore vrai ». Au-dela du seuil, la mention passe en alerte. */
+function age(t, seuilH) {
+  if (!t) return '';
+  const h = (Date.now() - t) / 3.6e6;
+  if (h < 0) return '';
+  const txt = h < 1 ? "il y a moins d'une heure"
+            : h < 48 ? 'il y a ' + Math.round(h) + ' h'
+            : 'il y a ' + Math.round(h / 24) + ' j';
+  return `<span class="age${h > seuilH ? ' vieux' : ''}">${txt}</span>`;
+}
 /* 42 caracteres d'affilee ne se verifient pas a l'oeil ; c'est pourtant le seul
    usage d'une adresse. Groupee par quatre, elle se relit. */
 const groupe = a => a.slice(2).replace(/(.{4})/g, '$1 ').trim();
 const jours = j => j == null ? NA : (j < 1 ? "aujourd'hui" : j < 2 ? 'hier'
   : Math.round(j) + ' j');
+/* « 2025-09 » plus i mois. Repeter l'etiquette a chaque point coutait 31 Ko
+   pour une suite qui se deduit d'un point de depart. */
+function moisApres(m0, i) {
+  if (!m0) return '';
+  const a = +m0.slice(0, 4), m = +m0.slice(5, 7) - 1 + i;
+  return (a + Math.floor(m / 12)) + '-' + String((m % 12 + 12) % 12 + 1).padStart(2, '0');
+}
 
 /* ════════════════════════════════════════════════════════ series
    L'equity est stockee en DELTAS DE SECONDES et le drawdown n'est pas stocke du
@@ -529,9 +567,11 @@ const jours = j => j == null ? NA : (j < 1 ? "aujourd'hui" : j < 2 ? 'hier'
 function equity(w) {
   const e = w.eq;
   if (!e || !e.v || !e.v.length) return [];
+  // `t0` en secondes, ecarts en MINUTES : l'axe porte des mois et l'infobulle un
+  // jour, la seconde etait mille fois plus fine que ce que l'ecran montre.
   const out = [[e.t0 * 1000, e.v[0]]];
   let t = e.t0;
-  for (let i = 0; i < e.d.length; i++) { t += e.d[i]; out.push([t * 1000, e.v[i + 1]]); }
+  for (let i = 0; i < e.d.length; i++) { t += e.d[i] * 60; out.push([t * 1000, e.v[i + 1]]); }
   return out;
 }
 function drawdown(w) {
@@ -546,6 +586,10 @@ const S = {
   get(k, d) { try { return JSON.parse(localStorage.getItem('ht.' + k)) ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('ht.' + k, JSON.stringify(v)); } catch {} },
 };
+/* La REQUETE ne se memorise pas : un filtre invisible qui survit a la session
+   fait mentir le compteur d'en-tete sans que rien ne l'explique. Le tri et le
+   filtre, eux, sont affiches en permanence — les memoriser est legitime. */
+const sauveEtat = () => S.set('etat', { tri: ETAT.tri, filtre: ETAT.filtre, q: '' });
 let WATCH = S.get('watch', []);
 if (!Array.isArray(WATCH)) WATCH = Array.from(WATCH || []);
 const suit = a => WATCH.indexOf(a) >= 0;
@@ -735,10 +779,13 @@ const FILTRES = [
   ['tous',   'Tous',           () => true],
   ['actif',  'Actifs 30 j',    w => (w.r30 ?? 0) > 0],
   ['neuf',   'Nouveaux',       w => w.promu != null],
-  ['q3',     'Qualité élevée', w => w.conf_lab === 'elevee'],
-  ['q2',     'Qualité moyenne',w => w.conf_lab === 'moyenne'],
-  ['q1',     'Qualité faible', w => w.conf_lab === 'faible'],
   ['obs',    'Observé',        w => estObs(w)],
+  // Appeles par la bande de convention, PAS par une pastille : deux controles
+  // pour un meme filtre etaient un doublon, mais retirer le filtre avec la
+  // pastille cassait la bande en silence.
+  ['q3',     'Qualité élevée', w => w.conf_lab === 'elevee',  false],
+  ['q2',     'Qualité moyenne',w => w.conf_lab === 'moyenne', false],
+  ['q1',     'Qualité faible', w => w.conf_lab === 'faible',  false],
   ['suivi',  'Suivis',         w => suit(w.a)],
   // « échantillon » : ce filtre ne peut montrer que les wallets EMBARQUES dans
   // la page. L'onglet Données en annonce 31 505 en observation — deux
@@ -755,11 +802,25 @@ const SCROLL = {};
 let SEP = { i: -1, n: 0, cle: null };
 
 function selection() {
-  const f = (FILTRES.find(x => x[0] === ETAT.filtre) || FILTRES[1])[2];
-  const q = ETAT.q.trim().toLowerCase();
+  // Repli NOMME, pas positionnel : `FILTRES[1]` avait silencieusement change
+  // de sens le jour ou une entree a ete inseree en deuxieme place.
+  const f = (FILTRES.find(x => x[0] === ETAT.filtre)
+             || FILTRES.find(x => x[0] === 'tous'))[2];
+  const brut = ETAT.q.trim();
   let r = W.filter(f);
-  if (q) r = r.filter(w => w.a.toLowerCase().indexOf(q) >= 0
-                        || (w.coins || []).some(c => c.toLowerCase().indexOf(q) >= 0));
+  if (brut) {
+    if (/^\d{1,4}$/.test(brut)) {
+      // Une requete purement numerique est un RANG. Sans ce cas, « 1 » remontait
+      // 211 wallets — tous ceux dont l'adresse contient le chiffre un.
+      r = r.filter(w => String(w.rang) === brut);
+    } else if (/^g\d{1,2}$/i.test(brut)) {
+      r = r.filter(w => w.groupe === +brut.slice(1));
+    } else {
+      const q = norm(brut);
+      r = r.filter(w => norm(w.a).indexOf(q) >= 0
+                     || (w.coins || []).some(c => norm(c).indexOf(q) >= 0));
+    }
+  }
   const cmp = (TRIS.find(x => x[0] === ETAT.tri) || TRIS[0])[2];
   /* ── M7. Les valeurs manquantes etaient triees EN SILENCE, poussees en queue
      par `?? -1`. A l'ecran elles formaient une fin de classement qui ressemble a
@@ -887,6 +948,7 @@ function pointeur(cv, n, PX, fmt) {
   let tip = puits.querySelector('.tip');
   if (!tip) { tip = document.createElement('div'); tip.className = 'tip'; puits.appendChild(tip); }
   const bouge = e => {
+    if (e.pointerType === 'touch' && e.cancelable) e.preventDefault();
     const r = cv.getBoundingClientRect();
     const x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
     let i = 0, best = Infinity;
@@ -1096,16 +1158,17 @@ const srTxt = w => w.se == null ? nb(w.sr, 2)
 
 /* Le Sharpe brut et celui que le modele retient ne sont pas deux chiffres a
    comparer de tete : c'est UN deplacement sur une echelle. */
+const ZERO_SR = 0;   // zero de l'axe des Sharpe. Ce n'est PAS ECHELLE[0].
 const SR_MIN = Math.min.apply(null, W.map(x => Math.min(x.sr, x.post)));
 const SR_MAX = Math.max.apply(null, W.map(x => Math.max(x.sr, x.post)));
 function retrecissement(w) {
   const L = 300, H = 34, pad = 8;
   const X = v => pad + ((v - SR_MIN) / ((SR_MAX - SR_MIN) || 1)) * (L - 2 * pad);
-  const y = 20, a = X(w.sr), b = X(w.post), z = X(0), p = [];
+  const y = 20, a = X(w.sr), b = X(w.post), z = X(ZERO_SR), p = [];
   p.push(`<line x1="${pad}" y1="${y}" x2="${L - pad}" y2="${y}" stroke="var(--filet)" stroke-width="1"/>`);
   p.push(`<line x1="${z}" y1="${y - 5}" x2="${z}" y2="${y + 5}" stroke="var(--filet)" stroke-width="1"/>`);
   p.push(`<text x="${z}" y="${H - 1}" fill="var(--faible)" font-size="10"
-          font-family="DM Mono, monospace" text-anchor="middle">${ECHELLE[0]}</text>`);
+          font-family="DM Mono, monospace" text-anchor="middle">${ZERO_SR}</text>`);
   p.push(`<line x1="${a}" y1="${y}" x2="${b}" y2="${y}" stroke="var(--mors)" stroke-width="1"/>`);
   p.push(`<circle cx="${a}" cy="${y}" r="3" fill="none" stroke="var(--mors)" stroke-width="1"/>`);
   p.push(`<line x1="${a - 4}" y1="${y + 4}" x2="${a + 4}" y2="${y - 4}" stroke="var(--mors)" stroke-width="1"/>`);
@@ -1151,13 +1214,13 @@ function fiche(w) {
     const l = w[cle] || [];
     if (!l.length) return '';
     return `<div class="sect"><span class="lab">${titre}</span></div>` + l.map(x =>
-      `<div class="wl ${cls}"><em>${tiret}</em><span>${esc(x)}</span></div>`).join('');
+      `<div class="wl ${cls}"><em>${tiret}</em><span>${esc(texte(x))}</span></div>`).join('');
   };
 
   let prot;
   if (w.obs) {
     const o = w.obs;
-    prot = `<div class="prot"><h4>Observé — donnée native HyperTracker</h4>
+    prot = `<div class="prot"><h4>Observé — donnée native de la source HyperTracker</h4>
       <p>Le Sharpe estimé par notre modèle est confronté au Sharpe recalculé sur les
       trades natifs. Le verdict global du protocole reste <b>${esc(META.verdict)}</b> :
       ${esc(META.verdict_motif)}.</p>
@@ -1172,7 +1235,8 @@ function fiche(w) {
       </div></div>`;
   } else {
     prot = `<div class="prot"><h4>Dérivé — aucune donnée native</h4>
-      <p>Ce wallet n'a aucun trade natif HyperTracker exploitable : son classement repose
+      <p>Ce wallet n'a aucun trade natif exploitable chez la source HyperTracker :
+      son classement repose
       entièrement sur la reconstruction depuis les fills publics. Aucune valeur observée
       n'est affichée ici, parce qu'il n'en existe aucune.</p></div>`;
   }
@@ -1377,7 +1441,8 @@ function tracesSecondaires(el, w) {
   el._tracees = true;
   courbe(el.querySelector('#g2'), drawdown(w), { h: 120, couleur: css('--mors') });
   const m = w.m || [];
-  barres(el.querySelector('#g3'), m.map(x => x[0]), m.map(x => x[2]), { h: 110, suffixe: ' trades' });
+  barres(el.querySelector('#g3'), m.map((_, i) => moisApres(w.m0, i)), m,
+    { h: 110, suffixe: ' trades' });
   const hi = w.hist;
   if (hi && hi.b) {
     const b = hi.b, tot = b.reduce((s, x) => s + x, 0);
@@ -1467,7 +1532,8 @@ function rendJour() {
 
   el.innerHTML = `
     <p class="note" style="margin-top:var(--e4)">Dernier cycle
-      ${esc((d.horodatage || '').slice(0, 16).replace('T', ' '))} · ${esc(d.mode || '')} ·
+      ${esc((d.horodatage || '').slice(0, 16).replace('T', ' '))} —
+      ${age(Date.parse(d.horodatage || ''), 48)} · ${esc(d.mode || '')} ·
       ${sy.duree_s ?? '—'} s</p>
     ${d.prochaine_action ? `<p class="note"><b>Prochaine action</b> — ${esc(d.prochaine_action)}</p>` : ''}
     ${sections([
@@ -1537,7 +1603,7 @@ function rendJour() {
 document.addEventListener('click', e => {
   const b = e.target.closest('.tout'); if (!b) return;
   ETAT.filtre = b.dataset.f; ETAT.tri = b.dataset.tri || 'score_a'; ETAT.q = '';
-  S.set('etat', ETAT); SCROLL['/rank'] = 0;
+  sauveEtat(); SCROLL['/rank'] = 0;
   convention(); chips(); recherche(); rendu(true);
   location.hash = '#/rank';
 });
@@ -1558,8 +1624,10 @@ function rendData() {
   document.getElementById('dh').innerHTML = `
     <div class="sect"><span class="lab">Fraîcheur</span></div>
     <div class="grid">
-      ${cellule('Dernière collecte', d.horodatage ? dateh(d.horodatage) : NA)}
-      ${cellule('Page générée le', esc(META.maj))}
+      ${cellule('Dernière collecte', d.horodatage
+        ? dateh(d.horodatage) + age(Date.parse(d.horodatage), 48) : NA)}
+      ${cellule('Page générée le', esc(META.maj) +
+        age(META.gen ? META.gen * 1000 : null, 24 * 7))}
       ${cellule('Mode du cycle', esc(d.mode || 'N/D'))}
       ${cellule('Durée', sy.duree_s == null ? NA : String(sy.duree_s), 's')}
     </div>
@@ -1581,6 +1649,11 @@ function rendData() {
       ${cellule('Sans probabilité', String(META.sans_p_cal ?? 0), '/ ' + META.n)}
       ${cellule('Verdict natif', esc(META.verdict))}
     </div>
+    <p class="note"><b>Deux&nbsp;«&nbsp;HyperTracker&nbsp;» sur cet écran.</b> La source
+      externe est l'API <span class="mo">ht-api.coinmarketman.com</span>, qui publie les
+      classements et les trades natifs ; cette application, qui les lit, porte le même
+      nom. Partout ci-dessous, «&nbsp;HyperTracker&nbsp;» sans autre précision désigne
+      la <b>source</b>.</p>
     <p class="note">Seuls <b>${META.avec_natif ?? 0} wallets sur ${META.n}</b> ont une donnée
       native permettant de confronter notre reconstruction à une seconde source. Le verdict
       du protocole reste <b>${esc(META.verdict)}</b> : ${esc(META.verdict_motif)}. Ce n'est
@@ -1588,15 +1661,15 @@ function rendData() {
 
     <div class="sect"><span class="lab">Ressources</span></div>
     <div class="grid">
-      ${cellule('Requêtes HyperTracker', String(h.requetes_hypertracker_utilisees ?? 0))}
+      ${cellule('Requêtes API HyperTracker', String(h.requetes_hypertracker_utilisees ?? 0))}
       ${cellule('Requêtes Hyperliquid', String(h.requetes_hyperliquid_consommees ?? 0))}
       ${cellule('Budget alloué', String(h.budget_requetes ?? 0))}
       ${cellule('Budget restant', String(h.budget_restant ?? 0))}
       ${cellule('Reportés', String(h.refuses_budget ?? 0))}
       ${cellule('Quota épuisé', q.epuise == null ? NA : (q.epuise ? 'oui' : 'non'))}
     </div>
-    <p class="note">Le cycle quotidien ne dépense <b>aucune</b> requête HyperTracker : ses
-      sources sont les instantanés de carnet déjà sur disque et l'API publique Hyperliquid.</p>
+    <p class="note">Le cycle quotidien ne dépense <b>aucune</b> requête à l'API HyperTracker :
+      ses sources sont les instantanés de carnet déjà sur disque et l'API publique Hyperliquid.</p>
 
     <div class="sect"><span class="lab">Alertes du dernier cycle</span></div>
     ${cats.length ? cats.map(x => `<div class="li" style="cursor:default">
@@ -1611,9 +1684,9 @@ function rendData() {
       <p><b>Interdit automatiquement</b> — ${esc(b.action_interdite)}</p>
       <p><b>Demande</b> — ${esc(b.demande)}</p></div>`).join('')}
 
-    <div class="sect"><span class="lab">Réputation HyperTracker</span></div>
-    <div class="prot"><h4>Chiffres HyperTracker, pas les nôtres</h4>
-      <p>${(RP.wallets || []).length} wallets viennent des classements perpétuels
+    <div class="sect"><span class="lab">Réputation — classements de la source</span></div>
+    <div class="prot"><h4>Chiffres de la source, pas les nôtres</h4>
+      <p>${RP.n_wallets} wallets viennent des classements perpétuels de la source
       HyperTracker. Sur ${(RP.meta || {}).n ?? '—'},
       <b>${(RP.meta || {}).sans_trade_clos ?? '—'} n'ont aucun trade clos</b> : ils tiennent
       des positions longtemps sans revenir à plat. Notre modèle compte des allers-retours
@@ -1673,7 +1746,7 @@ function route() {
     if (h === '/watch') {
       ETAT.filtre = 'suivi';
       if (ETAT.tri === 'score') ETAT.tri = 'mien';
-      S.set('etat', ETAT); chips(); rendu(true);
+      sauveEtat(); chips(); rendu(true);
     }
     h = ALIAS[h];
   }
@@ -1711,7 +1784,16 @@ function ouvrirDepuis(e) {
   location.hash = '#/w/' + c.dataset.a;
 }
 document.addEventListener('click', ouvrirDepuis);
-document.addEventListener('keydown', e => { if (e.key === 'Enter') ouvrirDepuis(e); });
+/* Le clavier n'ecoute QUE les deux listes qui portent des elements ouvrables.
+   Pose sur `document`, ce gestionnaire faisait naviguer sur n'importe quel
+   Entree de la page. Les releves du classement n'en ont plus besoin : ils
+   portent un vrai bouton, qui repond a Entree tout seul. */
+['liste', 'jour'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.closest('[data-a]')) ouvrirDepuis(e);
+  });
+});
 
 /* ════════════════════════════════════════════════════════ demarrage */
 const CONV = [
@@ -1750,13 +1832,13 @@ function convention() {
   el.onclick = e => {
     const b = e.target.closest('.cseg'); if (!b) return;
     ETAT.filtre = (ETAT.filtre === b.dataset.c) ? 'tous' : b.dataset.c;
-    S.set('etat', ETAT); SCROLL['/rank'] = 0;
+    sauveEtat(); SCROLL['/rank'] = 0;
     convention(); chips(); rendu(true);
   };
 }
 function chips() {
   document.getElementById('filtres').innerHTML = '<span class="lab">Filtre</span>' +
-    FILTRES.map(x =>
+    FILTRES.filter(x => x[3] !== false).map(x =>
       `<button class="chip${x[0] === ETAT.filtre ? ' on' : ''}" data-f="${x[0]}">${x[1]}</button>`).join('');
   document.getElementById('tris').innerHTML = '<span class="lab">Tri</span>' +
     TRIS.map(x =>
@@ -1767,12 +1849,12 @@ function chips() {
     // L'ordre naturel d'une liste de suivi est celui qu'on lui a donne, pas le
     // score : sans cela les fleches deplaceraient un rang que personne ne voit.
     if (ETAT.filtre === 'suivi' && ETAT.tri === 'score') ETAT.tri = 'mien';
-    S.set('etat', ETAT); SCROLL['/rank'] = 0;
+    sauveEtat(); SCROLL['/rank'] = 0;
     convention(); chips(); rendu(true);
   };
   document.getElementById('tris').onclick = e => {
     const b = e.target.closest('.chip'); if (!b) return;
-    ETAT.tri = b.dataset.t; S.set('etat', ETAT); SCROLL['/rank'] = 0;
+    ETAT.tri = b.dataset.t; sauveEtat(); SCROLL['/rank'] = 0;
     document.querySelectorAll('#tris .chip').forEach(x => x.classList.remove('on'));
     b.classList.add('on'); rendu(true);
   };
@@ -1785,10 +1867,10 @@ function recherche() {
   q.oninput = () => {
     box.classList.toggle('has', !!q.value);
     clearTimeout(t);
-    t = setTimeout(() => { ETAT.q = q.value; S.set('etat', ETAT); SCROLL['/rank'] = 0; rendu(true); }, 130);
+    t = setTimeout(() => { ETAT.q = q.value; sauveEtat(); SCROLL['/rank'] = 0; rendu(true); }, 130);
   };
   document.getElementById('qc').onclick = () => {
-    q.value = ''; ETAT.q = ''; S.set('etat', ETAT);
+    q.value = ''; ETAT.q = ''; sauveEtat();
     box.classList.remove('has'); rendu(true); q.focus();
   };
 }
@@ -1819,7 +1901,7 @@ def main() -> int:
     with open(SORTIE, "w", encoding="utf8", newline="\n") as f:
         f.write(html)
     print(f"ecrit -> {SORTIE}  ({os.path.getsize(SORTIE) / 1024:.0f} Ko)")
-    print(f"  {len(DATA['wallets'])} wallets | {len(REP.get('wallets', []))} de reputation")
+    print(f"  {len(DATA['wallets'])} wallets | {REP['n_wallets']} de reputation")
     return 0
 
 

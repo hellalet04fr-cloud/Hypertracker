@@ -94,8 +94,8 @@ def main() -> int:
 
     r["histogrammes incoherents"] = sum(
         1 for w in A["wallets"] if w.get("hist") and sum(w["hist"]["b"]) != w["n"])
-    # --- les horodatages delta-encodes doivent rester croissants : un ecart
-    #     negatif ferait reculer le temps sur la courbe reconstruite
+    # --- les horodatages delta-encodes (en MINUTES) doivent rester croissants :
+    #     un ecart negatif ferait reculer le temps sur la courbe reconstruite
     r["horodatages non monotones"] = sum(
         1 for w in A["wallets"] if w["eq"] and any(d < 0 for d in w["eq"]["d"]))
     r["series desappariees"] = sum(
@@ -131,7 +131,11 @@ def main() -> int:
     # --- une regularite mensuelle non calculable reste None, jamais 0
     r["regularite fabriquee"] = sum(
         1 for w in A["wallets"]
-        if w.get("stab") is not None and len(w.get("m") or []) < 3)
+        # MOIS REELLEMENT ACTIFS, pas la longueur de la serie : celle-ci est
+        # desormais contigue et comble les creux avec des zeros. Compter les
+        # cases plutot que les mois porteurs affaiblissait le controle.
+        if w.get("stab") is not None
+        and sum(1 for x in (w.get("m") or []) if x > 0) < 3)
 
     print("AUDIT D'AUTHENTICITE — chaque compteur doit valoir ZERO")
     print("=" * 56)

@@ -21,6 +21,12 @@ REF = max(max(t["close"] for t in v) for v in SER.values() if v)
 # Le filtre de periode etait donc decoratif. A 240 points, la moyenne de 153 trades
 # par wallet passe en resolution exacte pour la grande majorite.
 N_EQ = 240
+# Ecart de forme tolere sur une courbe d'equity, en fraction de son amplitude.
+# 0,005 represente moins de deux pixels sur les 160 px de haut ou la courbe est
+# rendue : invisible. Le drawdown, lui, reste EXACT — les points qui le portent
+# sont forces, pas tolerés. Mesure sur 291 wallets : 61 812 points bruts ->
+# 15 613 conserves, ecart maximal du drawdown deduit 0,0000.
+TOL_COURBE = 0.005
 N_SPARK = 18       # micro-courbe des cartes de classement
 N_HIST = 13        # tranches de l'histogramme
 
@@ -58,6 +64,48 @@ def echant(v, n):
     return [v[i] for i in indices(len(v), n)]
 
 
+def douglas_peucker(pts, tol):
+    """
+    Indices conserves d'une polyligne simplifiee a `tol` pres.
+
+    Le sous-echantillonnage regulier ne regarde pas la courbe : il garde 240
+    points d'une droite et lisse un decrochage. Celui-ci garde un point quand il
+    s'ecarte de la corde de plus de `tol`, et le jette sinon — l'erreur de forme
+    est donc BORNEE, ce qu'un pas fixe ne garantit jamais.
+
+    `pts` est normalise sur [0,1] x [0,1] : `tol` est ainsi une fraction de
+    l'amplitude de la courbe, pas une somme en dollars.
+
+    Iteratif, pas recursif : une serie de 40 000 points ferait exploser la pile.
+    """
+    n = len(pts)
+    if n < 3:
+        return list(range(n))
+    garde = [False] * n
+    garde[0] = garde[n - 1] = True
+    pile = [(0, n - 1)]
+    while pile:
+        i, j = pile.pop()
+        if j <= i + 1:
+            continue
+        x1, y1 = pts[i]
+        x2, y2 = pts[j]
+        dx, dy = x2 - x1, y2 - y1
+        norme = (dx * dx + dy * dy) ** 0.5
+        pire, k = 0.0, -1
+        for m in range(i + 1, j):
+            x0, y0 = pts[m]
+            d = (abs(dy * x0 - dx * y0 + x2 * y1 - y2 * x1) / norme
+                 if norme else abs(y0 - y1))
+            if d > pire:
+                pire, k = d, m
+        if pire > tol and k > 0:
+            garde[k] = True
+            pile.append((i, k))
+            pile.append((k, j))
+    return [i for i in range(n) if garde[i]]
+
+
 def prepare(a, w):
     tr = sorted(SER.get(a, []), key=lambda t: t["close"])
     r = [t["pnl"] - t["fee"] for t in tr]
@@ -80,7 +128,7 @@ def prepare(a, w):
         out.update({"win": None, "pf": None, "best": None, "pire": None,
                     "duree_h": None, "tpj": None, "vol": None, "eq": None, "hist": [],
                     "coins": [], "t0": None, "t1": None, "frais": None,
-                    "stab": None, "pire_serie": None, "m": []})
+                    "stab": None, "pire_serie": None, "m0": None, "m": []})
         return out
 
     gains = [x for x in r if x > 0]
@@ -136,14 +184,30 @@ def prepare(a, w):
         eq.append([t["close"], round(c, 2)])
         ddc.append(round(sommet - c, 2))
     creux = max(range(len(ddc)), key=lambda i: ddc[i])
-    idx = indices(len(eq), N_EQ, obligatoires=tuple(pics) + (creux,))
+
+    # DECIMATION PAR LA FORME. Voir douglas_peucker(). Les points qui mettent le
+    # sommet a jour, le creux maximal, le premier et le dernier sont forces :
+    # ils portent des valeurs affichees ailleurs dans la fiche, et un point
+    # remarquable ne se sous-echantillonne pas.
+    vals = [pt[1] for pt in eq]
+    amp = (max(vals) - min(vals)) or 1.0
+    span = (eq[-1][0] - eq[0][0]) or 1
+    bas = min(vals)
+    forme = [((pt[0] - eq[0][0]) / span, (pt[1] - bas) / amp) for pt in eq]
+    garde = set(douglas_peucker(forme, TOL_COURBE))
+    garde |= set(pics) | {creux, 0, len(eq) - 1}
+    idx = sorted(garde)
 
     # HORODATAGES EN DELTAS DE SECONDES. Chaque point portait un epoch en
     # millisecondes — treize chiffres repetes 240 fois. Les ecarts successifs en
     # tiennent quatre a six, et la seconde est mille fois plus fine que l'axe des
     # dates affiche.
-    ts = [eq[i][0] // 1000 for i in idx]
-    out["eq"] = {"t0": ts[0], "d": [ts[k] - ts[k - 1] for k in range(1, len(ts))],
+    # ARRONDI D'ABORD, ECARTS ENSUITE : arrondir les ecarts accumulerait une
+    # demi-minute par point le long de la courbe. `t0` reste en secondes, les
+    # ecarts sont en minutes.
+    tm = [round(eq[i][0] / 60000) for i in idx]
+    out["eq"] = {"t0": tm[0] * 60,
+                 "d": [tm[k] - tm[k - 1] for k in range(1, len(tm))],
                  "v": [eq[i][1] for i in idx]}
 
     # REGULARITE MENSUELLE. Le moteur calcule deja cette grandeur en interne
@@ -176,8 +240,29 @@ def prepare(a, w):
     for t in tr:
         d2 = time.gmtime(t["close"] / 1000)
         cnt[(d2.tm_year, d2.tm_mon)] = cnt.get((d2.tm_year, d2.tm_mon), 0) + 1
-    out["m"] = [[f"{y:04d}-{m:02d}", round(par_mois[(y, m)], 2), cnt.get((y, m), 0)]
-                for y, m in mois]
+    # UN MOIS DE DEPART ET UNE SUITE DE COMPTES. L'etiquette « 2025-09 » se
+    # deduit de l'index ; le PnL mensuel ne quitte pas le generateur, ou il sert
+    # deja a calculer la regularite. Les mois sans trade valent zero — ce n'est
+    # pas une valeur inventee, c'est un compte reellement nul.
+    #
+    # SERIE CONTIGUE, du premier au dernier mois d'activite. Elle ne l'etait
+    # pas : seuls les mois PORTANT des trades y figuraient, si bien qu'un wallet
+    # inactif de mars a juillet voyait fevrier et aout dessines cote a cote. Le
+    # graphique dont le seul objet est de dire « ce wallet trade-t-il encore »
+    # effacait exactement les periodes ou il ne tradait pas.
+    #
+    # `stab` et `pire_serie` ci-dessus restent calcules sur les mois REELLEMENT
+    # presents : ce sont des grandeurs reprises a l'identique de ht/ranking.py,
+    # et les recalculer sur une serie remplie changerait leur definition.
+    if mois:
+        (y0, m0), (y1, m1) = mois[0], mois[-1]
+        n_mois = (y1 - y0) * 12 + (m1 - m0) + 1
+        out["m0"] = f"{y0:04d}-{m0:02d}"
+        out["m"] = [cnt.get(((y0 * 12 + m0 - 1 + k) // 12,
+                             (y0 * 12 + m0 - 1 + k) % 12 + 1), 0) for k in range(n_mois)]
+    else:
+        out["m0"] = None
+        out["m"] = []
 
     # distribution des resultats, bornee aux quantiles pour rester lisible
     s = sorted(r)
@@ -256,7 +341,8 @@ def analyser(w):
             faibles.append(f"Peu actif — dernier trade il y a {w['dort_j']:.0f} jours")
     o = w.get("obs")
     if o is None:
-        risques.append("Aucune donnée native HyperTracker : classement DERIVED uniquement")
+        risques.append("Aucune donnée native de la source HyperTracker : "
+                        "classement DERIVED uniquement")
     elif not o["suffisant"]:
         risques.append(f"Échantillon natif insuffisant — {o['n']} trades, 30 requis")
     if w["qualite"] < 2:
@@ -302,9 +388,13 @@ def registre():
         # et au plus N_HIST_W par wallet — assez pour tracer, pas assez pour peser.
         for r in c.execute("select adresse, ts, score, rang, statut, raison from historique"
                            " where score is not null or rang is not null order by ts"):
+            # TROIS COLONNES, pas cinq. Les friezes de la fiche lisent
+            # l'horodatage, le score et le rang ; le statut et la raison — 120
+            # caracteres par point, 60 points par wallet — n'etaient affiches
+            # nulle part. Ils restent dans le registre, qui est leur place.
             out["hist"].setdefault(r["adresse"], []).append(
                 [r["ts"], round(r["score"], 1) if r["score"] is not None else None,
-                 r["rang"], r["statut"], (r["raison"] or "")[:120]])
+                 r["rang"]])
         for a, v in out["hist"].items():
             out["hist"][a] = v[-N_HIST_W:]
     finally:
@@ -332,6 +422,10 @@ for i, w in enumerate(CL["classement"], 1):
     d = prepare(w["a"], w)
     d["rang"] = i
     d.update(analyser(d))
+    # `pire_serie` a servi a produire sa ligne de vigilance — « N mois perdants
+    # consecutifs dans l'historique » — qui dit la meme chose en etant deja
+    # lisible. Le chiffre brut n'a plus rien a faire dans la page.
+    d.pop("pire_serie", None)
     # `etat` et non `st` : ce dernier est l'alias du module statistics, et le
     # masquer au niveau module cassait la mediane des durees plus haut.
     etat = REG["statuts"].get(w["a"], {})
@@ -342,13 +436,17 @@ for i, w in enumerate(CL["classement"], 1):
     d["watch"] = etat.get("watch", False)
     d["src"] = etat.get("src")
     d["vu"] = etat.get("vu")
-    d["rd"] = etat.get("rd")
+    # `rd` (raison de decouverte) est vide pour la TOTALITE des wallets — ils
+    # sont anterieurs a la creation du champ — et n'a jamais ete affiche.
     d["coll"] = etat.get("coll")
     d["ret"] = etat.get("ret") or 0
     d["promu"] = etat.get("promu")
     # PROVENANCE reelle : OBSERVED seulement si une donnee native existe pour ce
     # wallet. Jamais deduite du registre, jamais convertie.
-    d["prov"] = "OBSERVED" if d.get("obs") else "DERIVED"
+    # Provenance NON exportee : l'interface la deduit de la presence de `obs`,
+    # et transporter deux fois la meme verite invite a les voir diverger.
+    # La provenance se DEDUIT de la presence de `obs`, cote interface :
+    # transporter deux fois la meme verite invite a les voir diverger.
     # `histo` et non `hist` : ce dernier porte deja l'histogramme des PnL, et
     # l'ecraser aurait vide silencieusement le graphique de distribution.
     d["histo"] = REG["hist"].get(w["a"], [])
@@ -388,6 +486,10 @@ meta = {
     # trois lignes au-dessus de « derniere collecte 27 aout ». Le seul
     # indicateur nomme « fraicheur des donnees » se contredisait lui-meme.
     "maj": time.strftime("%Y-%m-%d"),
+    # HORODATAGE EXACT de la generation, en secondes. La date seule obligeait
+    # l'interface a supposer une heure — midi — et une page produite il y a deux
+    # minutes annoncait « il y a 7 h ». On ne devine pas ce qu'on peut ecrire.
+    "gen": int(time.time()),
     "spearman": round(CMP["primaire"]["B"][0], 4),
     "p": CMP["primaire"]["B"][1],
     "ece": round(CAL["ece_apres"], 4),
@@ -420,8 +522,23 @@ meta = {
     "seuil_conc": SCR.MAX_CONCENTRATION,
 }
 out = os.path.join(D, "app_data.json")
-json.dump({"meta": meta, "wallets": wallets,
-           "archives": REG["archives"], "daily": REG["daily"]},
+# --- INTERNEMENT DES PHRASES REPETEES. Purement mecanique : ce qui apparait
+#     plus d'une fois a l'identique devient un index dans `lib`. Les regles qui
+#     produisent ces phrases n'ont pas bouge et restent en un seul endroit.
+_freq = {}
+for _w in wallets:
+    for _k in ("forts", "faibles", "risques"):
+        for _x in _w[_k]:
+            _freq[_x] = _freq.get(_x, 0) + 1
+_lib = sorted(x for x, n in _freq.items() if n > 1)
+_pos = {x: i for i, x in enumerate(_lib)}
+for _w in wallets:
+    for _k in ("forts", "faibles", "risques"):
+        _w[_k] = [_pos.get(x, x) for x in _w[_k]]
+
+# --- `archives` n'a jamais ete lu : l'onglet Donnees affiche META.archives_total.
+json.dump({"meta": meta, "wallets": wallets, "lib": _lib,
+           "daily": REG["daily"]},
           open(out, "w"), separators=(",", ":"))
 print(f"ecrit -> {out}  ({os.path.getsize(out)/1024:.0f} Ko)")
 print(f"  {len(wallets)} wallets | equity moyenne "

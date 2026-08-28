@@ -22,7 +22,7 @@ CE QUE CHAQUE ETAPE PROUVE — elles ne se recouvrent pas :
   donnees      les donnees preparees redisent les fichiers bruts (12 compteurs)
   regressions  les defauts confirmes par l'audit du 2026-08-28 ne reviennent pas
   coherence    l'ECRAN affiche ce que le MOTEUR a calcule
-  fonctions    les 123 parcours de l'interface repondent
+  fonctions    les 121 parcours de l'interface repondent
 
 La quatrieme est celle qui manquait le plus : une valeur peut etre juste en base,
 la fonctionnalite marcher, et l'ecran montrer autre chose.
@@ -72,7 +72,7 @@ ETAPES = [
           "ce qui est affiche egale ce qui a ete calcule",
           ["node", "tests/coherence_ui.js"], navigateur=True),
     Etape("fonctions", "Fonctionnalites",
-          "123 parcours exerces dans un navigateur reel",
+          "121 parcours exerces dans un navigateur reel",
           ["node", "tests/audit_fonctionnalites.js"], navigateur=True,
           bloquante=False),
 ]

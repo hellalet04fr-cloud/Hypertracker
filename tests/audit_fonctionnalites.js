@@ -113,9 +113,6 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
     ['tous', 'Tous', `W.length`],
     ['actif', 'Actifs 30 j', `W.filter(w=>(w.r30??0)>0).length`],
     ['neuf', 'Nouveaux', `W.filter(w=>w.promu!=null).length`],
-    ['q3', 'Qualité élevée', `W.filter(w=>w.conf_lab==='elevee').length`],
-    ['q2', 'Qualité moyenne', `W.filter(w=>w.conf_lab==='moyenne').length`],
-    ['q1', 'Qualité faible', `W.filter(w=>w.conf_lab==='faible').length`],
     ['obs', 'Observé', `W.filter(w=>!!w.obs).length`],
     ['suivi', 'Suivis', `WATCH.length`],
     ['disco', 'Observation', `W.filter(w=>w.st==='DISCOVERY').length`],
@@ -217,6 +214,12 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
       'compteur d’en-tête');
   dit(await js(`document.querySelectorAll('#conv .cseg').length===3`) ? 'OK' : 'KO',
       'convention : légende, répartition et filtre en un seul objet');
+  // Un doublon retire : les trois pastilles « Qualité … » appelaient exactement
+  // le filtre de la bande, en moins riche.
+  dit(await js(`['q3','q2','q1'].every(k=>!document.querySelector('[data-f="'+k+'"]'))
+    && ['q3','q2','q1'].every(k=>FILTRES.some(f=>f[0]===k))`) ? 'OK' : 'KO',
+      'la qualité se filtre par la bande, pas par un doublon de pastille',
+      'le filtre existe toujours, seule la pastille redondante a disparu');
   // CINQ grandeurs, pas quatorze. Les neuf autres ne sont pas perdues : elles
   // sont sur la fiche, ou on les lit vraiment plutot que de les balayer.
   const champs = await js(`(()=>{const r=document.querySelector('#liste .row');
@@ -434,8 +437,11 @@ const dit = (etat, quoi, detail) => R.push({ section, etat, quoi, detail: detail
   // ═══════════════════════════════════════════════════ 10. DONNEES
   section = 'Données';
   await va('#/data');
+  // « Réputation — classements de la source » : le mot HyperTracker designait a
+  // la fois l'application et sa source de donnees, dans les deux sens et sur le
+  // meme ecran. La source est desormais qualifiee partout.
   for (const t of ['Fraîcheur', 'Couverture', 'Provenance', 'Ressources',
-                   'Alertes du dernier cycle', 'Réputation HyperTracker']) {
+                   'Alertes du dernier cycle', 'Réputation — classements de la source']) {
     dit(await js(`/${t}/.test(document.getElementById('dh').textContent)`) ? 'OK' : 'KO',
         `bloc « ${t} »`);
   }

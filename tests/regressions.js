@@ -37,6 +37,10 @@ const vrai = (nom, cond, detail) =>
 (async () => {
   const app = JSON.parse(fs.readFileSync(path.join(DATA, 'app_data.json'), 'utf8'));
   const W = app.wallets, META = app.meta;
+  // Les phrases repetees a l'identique sont des index dans `lib` : les resoudre
+  // ici evite qu'un controle devienne muet le jour ou une phrase se repete.
+  const LIB = app.lib || [];
+  const phr = l => (l || []).map(x => typeof x === 'number' ? (LIB[x] || '') : x);
 
   let wsUrl;
   for (let i = 0; i < 60 && !wsUrl; i++) {
@@ -241,10 +245,10 @@ const vrai = (nom, cond, detail) =>
   const pfHauts = W.filter(w => (w.pf || 0) > 10);
   vrai('des profit factors dégénérés existent dans les données',
     pfHauts.length > 0, 'aucun — le contrôle suivant ne prouverait rien');
-  const enForts = pfHauts.filter(w => (w.forts || []).some(x => /rofit factor/.test(x)));
+  const enForts = pfHauts.filter(w => phr(w.forts).some(x => /rofit factor/.test(x)));
   vrai('aucun profit factor > 10 n’est présenté comme un point fort',
     enForts.length === 0, enForts.length + ' wallets');
-  const enRisques = pfHauts.filter(w => (w.risques || []).some(x => /dégénérée/.test(x)));
+  const enRisques = pfHauts.filter(w => phr(w.risques).some(x => /dégénérée/.test(x)));
   vrai('ils sont portés en vigilance, avec leur motif',
     enRisques.length === pfHauts.length,
     enRisques.length + ' / ' + pfHauts.length);
@@ -416,6 +420,160 @@ const vrai = (nom, cond, detail) =>
       const m = String(s).match(/[\\d.]+/g);
       return m && (m.length < 4 || +m[3] >= 0.999); })`),
     'fond translucide : le flou n’est pas garanti par tous les moteurs');
+
+  // ══════════════════════════════════════════════ P — la charge utile
+  // Une page statique porte tout son poids au premier octet : pas de chargement
+  // differe, pas de pagination serveur. Chaque kilo-octet est paye par tout le
+  // monde, y compris pour des fiches que personne n'ouvrira.
+  etape = 'P poids et fidélité';
+  const octets = fs.statSync(path.join(DATA, 'app.html')).size;
+  const ko = Math.round(octets / 1024);
+  vrai('la page a fondu de moitié', ko < 700, ko + ' Ko');
+  console.log(`  ·   poids de la page : ${ko} Ko`);
+
+  // LA DECIMATION NE DOIT RIEN COUTER AU DRAWDOWN. Il n'est plus stocke : il se
+  // deduit de cette courbe. Un point de sommet perdu, et le repli recalcule
+  // sous-estime sans que rien ne le signale.
+  const ecarts = [];
+  for (const w of W) {
+    if (!w.eq || !w.eq.v || w.dd == null) continue;
+    let sommet = 0, pire = 0;
+    for (const v of w.eq.v) { sommet = Math.max(sommet, v); pire = Math.max(pire, sommet - v); }
+    ecarts.push(Math.abs(pire - w.dd));
+  }
+  vrai('le drawdown déduit reste exact après décimation',
+    ecarts.length > 0 && Math.max(...ecarts) < 0.021,
+    `${ecarts.length} wallets, écart max ${Math.max(...ecarts).toFixed(4)}`);
+
+  // LA COURBE FINIT TOUJOURS SUR LE PnL AFFICHE. C'est le defaut qui avait
+  // touche 39 wallets sur 231 ; la decimation est exactement le genre de
+  // changement qui le ferait revenir.
+  const fins = W.filter(w => w.eq && w.eq.v && w.eq.v.length
+    && Math.abs(w.eq.v[w.eq.v.length - 1] - w.pnl) > 0.02);
+  vrai('la courbe se termine sur le PnL réel', fins.length === 0,
+    fins.slice(0, 3).map(w => w.a.slice(0, 10)).join(' '));
+
+  // RIEN NE VOYAGE SANS ETRE LU. Les champs morts sont un cout paye par tout le
+  // monde pour personne.
+  const morts = ['prov', 'rd', 'pire_serie'].filter(k => k in W[0]);
+  vrai('aucun champ mort n’est embarqué', morts.length === 0, morts.join(', '));
+  vrai('les 315 fiches de réputation ne sont plus embarquées',
+    await js(`typeof RP.wallets === 'undefined' && typeof RP.n_wallets === 'number'`),
+    'le document complet voyage encore');
+
+  // La serie mensuelle ne transporte plus que des comptes : les etiquettes se
+  // deduisent. Encore faut-il qu'elles se deduisent JUSTE.
+  await va('#/w/' + trois[0], 900);
+  await js(`(()=>{const d=document.getElementById('plus');
+    d.open=true; d.dispatchEvent(new Event('toggle'));})()`);
+  await dodo(700);
+  vrai('les étiquettes de mois se déduisent correctement',
+    await js(`(()=>{const w=byA['${trois[0]}'];
+      if(!w.m0||!w.m.length) return true;
+      const der=moisApres(w.m0, w.m.length-1);
+      const d=new Date(w.t1);
+      return der === d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0');})()`),
+    'le dernier mois déduit ne tombe pas sur le dernier trade');
+
+  // ══════════════════════════════════════════════ D1 — la recherche
+  // L'application propose un bouton « Groupée » qui copie « 0x F2C9 C2EB … ».
+  // Recolle dans son propre champ de recherche : zero resultat. A l'inverse
+  // « 1 » remontait 211 wallets, la comparaison etant un indexOf brut.
+  etape = 'D1 recherche';
+  await cmd('Page.navigate', { url: URL + '#/rank' });
+  await dodo(2200);
+  await js(`document.querySelector('[data-f="tous"]').click()`); await dodo(400);
+  const cherche = async v => {
+    await js(`(()=>{const q=document.getElementById('q');
+      q.value=${JSON.stringify(v)}; q.dispatchEvent(new Event('input'));})()`);
+    await dodo(400);
+    return js(`courant.length`);
+  };
+  const cible = W[4];
+  const groupee = '0x' + cible.a.slice(2).replace(/(.{4})/g, '$1 ').trim().toUpperCase();
+  vrai('l’adresse groupée que l’application copie se retrouve',
+    (await cherche(groupee)) === 1, `« ${groupee.slice(0, 24)}… » -> ` + await js(`courant.length`));
+  const rang7 = W.find(w => w.rang === 7);
+  vrai('une requête numérique est un rang, pas un fragment hexadécimal',
+    (await cherche('7')) === 1 && (await js(`courant[0].a`)) === rang7.a,
+    await js(`courant.length`) + ' résultats');
+  vrai('une bande se cherche aussi',
+    (await cherche('G01')) === W.filter(w => w.groupe === 1).length,
+    await js(`courant.length`) + ' vs ' + W.filter(w => w.groupe === 1).length);
+  await js(`document.getElementById('qc').click()`); await dodo(400);
+
+  // ══════════════════════════════════════════════ D2 — rien ne se cache
+  // La requete etait ecrite dans localStorage : on revenait trois jours plus
+  // tard, le classement etait filtre, le compteur annoncait un total reduit, et
+  // la seule trace vivait hors ecran des 200 px de defilement.
+  etape = 'D2 la requête ne survit pas';
+  await cherche('0xa');
+  // « On revient trois jours plus tard » : un CHARGEMENT NEUF, pas un
+  // rechargement. Recharger la meme URL fait restaurer les champs de formulaire
+  // par le navigateur lui-meme, ce qui n'a rien a voir avec la persistance
+  // qu'on mesure ici — et faisait echouer le controle sur un faux motif.
+  vrai('la requête n’est pas écrite dans le stockage local',
+    (await js(`(JSON.parse(localStorage.getItem('ht.etat')||'{}').q||'')`)) === '',
+    'stockée : « ' + await js(`(JSON.parse(localStorage.getItem('ht.etat')||'{}').q||'')`) + ' »');
+  await cmd('Page.navigate', { url: 'about:blank' });
+  await dodo(400);
+  await cmd('Page.navigate', { url: URL + '#/rank' });
+  await dodo(2200);
+  vrai('elle ne ressuscite pas à la visite suivante',
+    (await js(`document.getElementById('q').value`)) === ''
+    && (await js(`ETAT.q`)) === '',
+    'requête ressuscitée : « ' + await js(`document.getElementById('q').value`) + ' »');
+  vrai('le tri et le filtre, eux, restent mémorisés',
+    (await js(`JSON.parse(localStorage.getItem('ht.etat')||'{}').filtre`)) === 'tous',
+    'préférence perdue');
+
+  // ══════════════════════════════════════════════ D6 — la touche Entrée
+  // Le gestionnaire etait pose sur `document` : tout Entree hors d'un bouton,
+  // d'un champ ou d'un summary declenchait une navigation.
+  etape = 'D6 portée du clavier';
+  await js(`location.hash='#/data'`); await dodo(700);
+  const avantE = await js(`location.hash`);
+  await js(`document.querySelector('#dh .note').dispatchEvent(
+    new KeyboardEvent('keydown', {key:'Enter', bubbles:true}))`);
+  await dodo(500);
+  vrai('Entrée hors d’une liste ne navigue pas',
+    (await js(`location.hash`)) === avantE,
+    avantE + ' -> ' + await js(`location.hash`));
+
+  // ══════════════════════════════════════════════ D7 — le geste
+  etape = 'D7 le doigt ne fait pas deux choses';
+  await va('#/w/' + trois[0], 900);
+  vrai('un graphique prend la main sur le geste',
+    await js(`getComputedStyle(document.getElementById('g1')).touchAction === 'none'`),
+    'le navigateur défile pendant qu’on suit la courbe');
+
+  // ══════════════════════════════════════════════ D8 — l’âge de la donnée
+  // Dates absolues dans une page statique consultee des semaines plus tard :
+  // rien ne disait que la donnee avait vieilli.
+  etape = 'D8 la donnée porte son âge';
+  await js(`location.hash='#/data'`); await dodo(800);
+  vrai('la fraîcheur est relative, pas seulement absolue',
+    (await js(`document.querySelectorAll('#dh .age').length`)) >= 2,
+    await js(`document.querySelectorAll('#dh .age').length`) + ' mentions d’âge');
+  vrai('l’âge sait passer en alerte', await js(`(()=>{
+    const e=document.querySelector('#dh .age'); if(!e) return false;
+    const av=e.className;
+    // On force une donnee vieille de trois mois et on regarde si ca se voit.
+    const t=Date.now()-90*24*3.6e6;
+    const h=age(t,48);
+    return /vieux/.test(h) && !/vieux/.test(age(Date.now()-3.6e6,48));})()`),
+    'un relevé de trois mois se présente comme un relevé frais');
+
+  // ══════════════════════════════════════════════ D4 — rien d’interne à l’écran
+  // Cette page est partagee par lien : « Lancez python -m ht.matin » s'adressait
+  // a l'operateur et etait lu par tout le monde, en devoilant le nom du module
+  // et l'heure de la tache planifiee.
+  etape = 'D4 aucune commande interne dans la page';
+  const brut = fs.readFileSync(path.join(DATA, 'app.html'), 'utf8');
+  const fuites = ['python -m ht.', 'ht.matin', 'HYPERTRACKER_API_TOKEN', 'registre.db']
+    .filter(x => brut.indexOf(x) >= 0);
+  vrai('aucune commande ni secret interne dans la page publiée',
+    fuites.length === 0, fuites.join(', '));
 
   console.log('\n=== VERT (' + vert.length + ') ===');
   vert.forEach(v => console.log('  OK  ' + v));
