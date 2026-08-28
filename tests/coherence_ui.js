@@ -35,6 +35,18 @@ const edge = spawn(EDGE, ['--headless=new', '--disable-gpu', '--hide-scrollbars'
 
 const dodo = ms => new Promise(r => setTimeout(r, ms));
 const ecarts = [];
+/** Ecart maximal LEGITIME pour un montant, deduit du format de `usd()` :
+ *    >= 1 000 000  ->  2 decimales de million   -> 5 000
+ *    >= 1 000      ->  1 decimale de millier    ->    50
+ *    sinon         ->  0 decimale               ->     0,5
+ *  Une tolerance plus serree que l'arrondi declare accuse l'ecran de mentir
+ *  quand il dit exactement ce qu'il a annonce dire. */
+const tolUsd = v => {
+  const a = Math.abs(v || 0);
+  if (a >= 1e6) return 5001;
+  if (a >= 1e3) return 50.1;
+  return 0.51;
+};
 const N = s => {
   // « +$6.2k », « $164 », « 0,2383 », « 79.4 % », « 128 » -> nombre
   const t = String(s).replace(/\u2212/g, '-').replace(/[^\d.,\-kM]/g, '');
@@ -156,8 +168,8 @@ const N = s => {
     cmp('Sharpe retenu', lu.post, w.post, 0.00006);
     // Les montants sont ABREGES a l'affichage (+$6.2k) : la tolerance suit
     // l'arrondi reellement declare, pas une precision qu'on n'affiche pas.
-    cmp('PnL', lu.pnl, w.pnl, Math.max(60, Math.abs(w.pnl) * 0.006));
-    cmp('drawdown', lu.dd, w.dd, Math.max(1, Math.abs(w.dd) * 0.006));
+    cmp('PnL', lu.pnl, w.pnl, tolUsd(w.pnl));
+    cmp('drawdown', lu.dd, w.dd, Math.abs(w.dd) >= 10 ? 0.51 : 0.005);
     cmp('trades', lu.n, w.n);
     cmp('jours', lu.jours, w.jours);
     cmp('taux de réussite', lu.win, w.win, 0.06);
@@ -170,9 +182,9 @@ const N = s => {
     cmp('régularité', lu.stab, w.stab, 0.51);
     cmp('activité 30 j', lu.r30, w.r30);
     cmp('activité 7 j', lu.r7, w.r7);
-    cmp('meilleur trade', lu.best, w.best, Math.max(1, Math.abs(w.best) * 0.006));
-    cmp('pire trade', lu.pire, w.pire, Math.max(1, Math.abs(w.pire) * 0.006));
-    cmp('frais', lu.frais, w.frais, Math.max(1, Math.abs(w.frais) * 0.006));
+    cmp('meilleur trade', lu.best, w.best, tolUsd(w.best));
+    cmp('pire trade', lu.pire, w.pire, tolUsd(w.pire));
+    cmp('frais', lu.frais, w.frais, Math.abs(w.frais) >= 10 ? 0.51 : 0.005);
     cmp('trades / jour', lu.tpj, w.tpj, 0.011);
 
     // Ces deux-la n'existent PAS dans la source : elles doivent rester N/D.

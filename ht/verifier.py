@@ -20,6 +20,7 @@ CE QUE CHAQUE ETAPE PROUVE — elles ne se recouvrent pas :
                rouverte, DERIVED ne certifie pas
   tests        les 410 tests rapides passent
   donnees      les donnees preparees redisent les fichiers bruts (12 compteurs)
+  regressions  les defauts confirmes par l'audit du 2026-08-28 ne reviennent pas
   coherence    l'ECRAN affiche ce que le MOTEUR a calcule
   fonctions    les 114 parcours de l'interface repondent
 
@@ -64,6 +65,9 @@ ETAPES = [
     Etape("donnees", "Authenticite des donnees",
           "12 compteurs a zero : aucune donnee fictive",
           [sys.executable, "-m", "app.audit_donnees"]),
+    Etape("regressions", "Regressions de l'audit",
+          "les 29 defauts confirmes ne reviennent pas",
+          ["node", "tests/regressions.js"], navigateur=True),
     Etape("coherence", "Coherence ecran / moteur",
           "ce qui est affiche egale ce qui a ete calcule",
           ["node", "tests/coherence_ui.js"], navigateur=True),
@@ -181,7 +185,18 @@ def hook() -> int:
     return 0
 
 
+def _console_utf8() -> None:
+    """La console Windows est en cp1252 : le premier caractere hors table tue le
+    rapport au moment ou il compte le plus. On remplace plutot que de mourir."""
+    for flux in (sys.stdout, sys.stderr):
+        try:
+            flux.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def main(argv=None) -> int:
+    _console_utf8()
     ap = argparse.ArgumentParser(description="Porte de verification HyperTracker")
     ap.add_argument("--rapide", action="store_true",
                     help="s'arrete avant les controles navigateur")

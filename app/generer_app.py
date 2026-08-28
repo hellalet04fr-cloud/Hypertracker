@@ -63,7 +63,9 @@ TPL = r"""<title>HyperTracker</title>
 <meta name="theme-color" content="#0B0E11">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" media="print" onload="this.media='all'"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap"></noscript>
 <style>
 /* ════════════════════════════════════════════════════════ SYSTEME
    Une feuille de releves. Registre unique sombre, assume : un instrument de
@@ -1089,6 +1091,11 @@ function fiche(w) {
 
 function ouvre(a) {
   const w = byA[a], el = document.getElementById('v-wallet');
+  // Le noeud est REUTILISE d'une fiche a l'autre : son drapeau doit l'etre
+  // aussi. Sans cette ligne, seule la premiere fiche de la session voyait ses
+  // graphiques secondaires dessines.
+  el._tracees = false;
+  el._wallet = w || null;
   if (!w) {
     el.innerHTML = `<div class="wrap"><div class="empty"><div class="lab">Wallet introuvable</div>
       <p>Cette adresse ne figure pas parmi les ${META.n} wallets analysés.</p></div></div>`;
@@ -1116,10 +1123,22 @@ function ouvre(a) {
     reste.hidden = !det.open;
     if (det.open) requestAnimationFrame(() => tracesSecondaires(el, w));
   });
-  requestAnimationFrame(() => {
-    cadran(el.querySelector('#cad'), w);
-    courbe(el.querySelector('#g1'), equity(w), { h: 160 });
-  });
+  requestAnimationFrame(() => tracesPrincipales(el, w));
+}
+
+/* Les canvas sont les seuls elements qui dependent de la largeur : eux seuls
+   ont besoin d'etre refaits quand elle change. Le HTML, le defilement et l'etat
+   du repli n'y touchent pas. */
+function tracesPrincipales(el, w) {
+  cadran(el.querySelector('#cad'), w);
+  courbe(el.querySelector('#g1'), equity(w), { h: 160 });
+}
+function redessineFiche() {
+  const el = document.getElementById('v-wallet'), w = el._wallet;
+  if (!w || !el.querySelector('#cad')) return;
+  tracesPrincipales(el, w);
+  const reste = el.querySelector('#reste');
+  if (reste && !reste.hidden) { el._tracees = false; tracesSecondaires(el, w); }
 }
 
 function tracesSecondaires(el, w) {
@@ -1353,6 +1372,10 @@ const ECRANS = {
 const VUES = { '/': 'v-jour', '/rank': 'v-rank', '/data': 'v-data' };
 const ALIAS = { '/watch': '/rank', '/disco': '/' };
 let routeCourante = '/';
+/* Vrai des la premiere navigation INTERNE. Sur une ouverture directe sur une
+   fiche, il n'y a rien derriere : « Retour » doit mener au classement plutot
+   que de sortir de l'application. */
+let navInterne = false;
 
 function entete(r, w) {
   const hd = document.getElementById('hd');
@@ -1361,7 +1384,8 @@ function entete(r, w) {
       <span class="htitle" style="text-align:right"><h1 style="font-size:12px;letter-spacing:.14em"
         >${w ? String(w.rang).padStart(3, '0') : 'Wallet'}</h1>
       <p>${w ? 'score ' + w.score.toFixed(1) + ' · IC ' + w.ic[0] + '–' + w.ic[1] : ''}</p></span>`;
-    hd.querySelector('#bk').onclick = () => history.back();
+    hd.querySelector('#bk').onclick = () =>
+      navInterne ? history.back() : (location.hash = '#/rank');
     return;
   }
   const e = ECRANS[r] || ECRANS['/'];
@@ -1400,7 +1424,7 @@ function majNav(h) {
   document.querySelectorAll('nav button').forEach(b =>
     b.classList.toggle('on', h != null && b.dataset.nav === h));
 }
-window.addEventListener('hashchange', route);
+window.addEventListener('hashchange', () => { navInterne = true; route(); });
 window.addEventListener('scroll', () => {
   if (routeCourante !== '/w') SCROLL[routeCourante] = window.scrollY;
 }, { passive: true });
@@ -1486,10 +1510,16 @@ function recherche() {
   };
 }
 let redim;
+let LARG = window.innerWidth;
 window.addEventListener('resize', () => {
+  // HAUTEUR SEULE = barre d'URL qui se retracte pendant le defilement. Ce n'est
+  // pas un changement de mise en page, et le traiter comme tel renvoyait le
+  // lecteur en haut de fiche a chaque scroll.
+  if (window.innerWidth === LARG) return;
+  LARG = window.innerWidth;
   clearTimeout(redim);
   redim = setTimeout(() => {
-    if (routeCourante === '/w') ouvre(location.hash.slice(4).toLowerCase());
+    if (routeCourante === '/w') redessineFiche();
     if (routeCourante === '/') rendJour();
     if (routeCourante === '/data') rendData();
   }, 200);
