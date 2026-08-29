@@ -27,7 +27,7 @@ Conséquence pratique : **les sous-agents sont coupés**, tout se fait en direct
 | 3 · Liste | **fait** — virtualisée, tri multi-clés, rails en canvas | ci-dessous |
 | 4 · Fiche et inspecteur | **fait** — 4 onglets dont Preuve | ci-dessous |
 | 5 · Aujourd'hui et Données | **fait** | ci-dessous |
-| 6 · A11y, mouvement, golden files | **en cours** | — |
+| 6 · A11y, mouvement, golden files | **fait** | ci-dessous |
 
 ### MESURES RÉELLES (poste de travail, données réelles)
 
@@ -37,11 +37,30 @@ Conséquence pratique : **les sous-agents sont coupés**, tout se fait en direct
 | Décodage de l'index | — | **19–28 ms, dans le worker** |
 | Poids des données | — | 593 Ko découpés (meta 9,4 · index 102 · daily 11 · 163 lots) |
 
+### TESTS
+
+| Suite | Volume | État |
+|---|---|---|
+| pytest (générateur, moteur) | **424** | vert |
+| vitest (domain, design, charts, data) | **72** | vert |
+| Playwright (4 largeurs) | **114** | vert |
+
+Les deux audits — contraste et cibles tactiles — portent une **sentinelle** :
+ils injectent eux-mêmes le défaut d'origine et refusent de rendre leur verdict
+s'ils ne le détectent pas. Un audit de contraste écrit dans une session
+précédente passait du premier coup parce qu'une classe de caractères mal
+échappée l'empêchait de lire une seule couleur.
+
 ### PROCHAINE ACTION PRÉCISE
 
-Étape 6 : écrire `e2e/` (Playwright) avec les 18 critères d'acceptation, l'audit
-de contraste et de cibles tactiles sur le DOM rendu, puis les golden files aux
-quatre largeurs.
+Rien de bloquant. Ce qui reste, par ordre d'utilité :
+1. le critère 14 (aucune frame > 16 ms sous ralentissement 4×) n'est **pas
+   automatisé** : il demande le protocole CDP de profilage, pas Playwright seul ;
+2. les gestes mobiles (glissé pour suivre / comparer, tiré pour rafraîchir,
+   feuille inférieure à trois positions) ne sont pas implémentés — la liste
+   mobile porte un bouton « Suivre » explicite à la place ;
+3. la persistance des largeurs de colonnes fonctionne, mais le masquage de
+   colonnes n'a pas d'interface pour l'activer.
 
 ### DÉCISIONS PRISES
 

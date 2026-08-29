@@ -24,6 +24,8 @@ import { Separateur } from './Communs'
 import s from './TableauReleve.module.css'
 
 export const H_LIGNE = 28
+/** Rangee de CONTROLES : 32 px, la cible minimale a la souris. */
+export const H_ENTETE = 32
 const W_RAIL = 120
 const H_RAIL = 20
 
@@ -126,8 +128,8 @@ export function TableauReleve({
       const e = elements[vi.index]
       if (e?.genre !== 'ligne') continue
       // `vi.start` est relatif au debut des lignes ; l'entete collee occupe
-      // H_LIGNE au-dessus d'elles dans la piste defilante.
-      const y = vi.start + H_LIGNE - el.scrollTop + (H_LIGNE - H_RAIL) / 2
+      // H_ENTETE au-dessus d'elles dans la piste defilante.
+      const y = vi.start + H_ENTETE - el.scrollTop + (H_LIGNE - H_RAIL) / 2
       if (y < -H_RAIL || y > h) continue
       railCanvas(ctx, e.l, 0, y, pal, { w: W_RAIL, h: H_RAIL, marge: 5, pas: 4 })
     }

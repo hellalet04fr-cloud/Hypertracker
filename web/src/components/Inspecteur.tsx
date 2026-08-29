@@ -19,6 +19,7 @@ import { Mesure, Section } from './Communs'
 import { Bloc } from './Squelette'
 import { Mono, Stack, Text } from '@/design/primitives'
 import { Series } from './Series'
+import { Raisons } from './Raisons'
 import s from './Inspecteur.module.css'
 
 export const ONGLETS = ['Mesure', 'Preuve', 'Séries', 'Cycle de vie'] as const
@@ -81,7 +82,7 @@ export function Inspecteur({ adresse, onglet, onOnglet }: Props) {
       </div>
 
       <div className={s.contenu} role="tabpanel">
-        {actif === 'Mesure' && <OngletMesure l={l} meta={meta} />}
+        {actif === 'Mesure' && <OngletMesure l={l} meta={meta} detail={detail} />}
         {actif === 'Preuve' && <OngletPreuve l={l} meta={meta} detail={detail} etat={etat} />}
         {actif === 'Séries' && <Series detail={detail} etat={etat} />}
         {actif === 'Cycle de vie' && <OngletCycle detail={detail} etat={etat} />}
@@ -122,7 +123,7 @@ export function useDetail(adresse: string | null, gen: number): { detail: Detail
 
 /* ────────────────────────────────────────────────────────── Mesure */
 
-function OngletMesure({ l, meta }: { l: Ligne; meta: Meta }) {
+function OngletMesure({ l, meta, detail }: { l: Ligne; meta: Meta; detail: Detail | null }) {
   const larg = largeurIC(l)
   const pairs = meta.n
   return (
@@ -181,6 +182,8 @@ function OngletMesure({ l, meta }: { l: Ligne; meta: Meta }) {
           décrit pas une méthode reproductible mais un événement.
         </Text>
       )}
+
+      {detail && <Raisons detail={detail} lib={meta.lib} />}
     </Stack>
   )
 }

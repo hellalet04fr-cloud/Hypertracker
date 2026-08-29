@@ -101,7 +101,18 @@ export default function Classement() {
       suivre: () => selection && basculerSuivi(selection),
       filtres: () => setPanneau((v) => !v),
       recherche: () => document.getElementById('recherche')?.focus(),
-      fermer: () => (panneau ? setPanneau(false) : epingler(null)),
+      fermer: () => {
+        // Fermer une couche, c'est AUSSI rendre le focus. Laisse dans le champ
+        // de recherche, il rendait « Entree » inoperant — Entree etant
+        // volontairement neutralise dans une saisie.
+        const a = document.activeElement
+        if (a instanceof HTMLElement && /INPUT|TEXTAREA/.test(a.tagName)) {
+          a.blur()
+          return
+        }
+        if (panneau) setPanneau(false)
+        else epingler(null)
+      },
     },
     mise === 'poste',
   )

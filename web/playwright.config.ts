@@ -23,7 +23,10 @@ export default defineConfig({
     { name: 'desktop-1920', use: { ...devices['Desktop Chrome'], viewport: { width: 1920, height: 1080 } } },
   ],
   webServer: {
-    command: 'npm run build && npm run preview -- --port 4173 --strictPort',
+    // `--host 127.0.0.1` : sans lui Vite n'ecoute qu'en IPv6 (`[::1]`) tandis que
+    // Playwright sonde `http://127.0.0.1`, et le demarrage expire sur un serveur
+    // pourtant vivant.
+    command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

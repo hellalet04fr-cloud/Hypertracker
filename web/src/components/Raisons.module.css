@@ -1,0 +1,13 @@
+.ligne {
+  display: flex;
+  gap: var(--e3);
+  align-items: baseline;
+  padding: var(--e2) 0;
+}
+.signe {
+  flex: 0 0 12px;
+  font-family: var(--f-mono);
+  color: var(--faible);
+}
+.f .signe { color: var(--index); }
+.v .signe { color: var(--alerte); }

@@ -9,7 +9,12 @@
   border-bottom: 1px solid var(--filet);
   color: var(--clair);
   font: 400 var(--t-lg) / 1 var(--f-mono);
-  outline: none;
+}
+/* PAS d'`outline: none` sans rien a la place : un champ qu'on ne voit pas quand
+   on l'atteint au clavier est un champ inatteignable au clavier. */
+.champ:focus-visible {
+  outline: 2px solid var(--index);
+  outline-offset: 2px;
 }
 .champ::placeholder { color: var(--faible); font-family: var(--f-texte); font-size: var(--t-md); }
 .champ:focus { border-bottom-color: var(--gris); }

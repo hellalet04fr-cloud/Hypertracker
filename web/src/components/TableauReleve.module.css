@@ -4,11 +4,12 @@
 /* `min-width: max-content` sur les deux : sans elle, la piste de defilement se
    cale sur le conteneur et les colonnes qui depassent deviennent
    inatteignables plutot que d'etre atteignables en defilant. */
+/* La cible se mesure sur le BOUTON, pas sur la rangee : un filet inferieur d'un
+   pixel suffisait a ramener les boutons a 31 px sous une rangee de 32. */
 .entete {
   display: flex;
   align-items: stretch;
   min-width: max-content;
-  height: var(--h-ligne);
   border-bottom: 1px solid var(--filet-fort);
   background: var(--panneau);
   position: sticky;
@@ -20,6 +21,7 @@
   display: flex;
   align-items: center;
   flex: 0 0 auto;
+  min-height: var(--cible-souris);
   padding: 0 var(--e2);
   background: none;
   border: 0;
@@ -78,12 +80,23 @@ button.th:hover { color: var(--gris); }
 }
 .td.d { text-align: right; }
 
+/* LA ZONE DE PRISE DEBORDE LE DESSIN. Une ligne de donnees fait 28 px — c'est
+   la densite demandee — et une cible a la souris en demande 32. Les deux ne
+   sont pas contradictoires : le pseudo-element etend la prise de deux pixels de
+   part et d'autre sans toucher a la mise en page. C'est la surface qu'on vise
+   qui compte, pas celle qu'on voit. */
 .lien {
+  position: relative;
   background: none;
   border: 0;
   text-align: left;
   cursor: pointer;
   color: var(--gris);
+}
+.lien::after {
+  content: '';
+  position: absolute;
+  inset: -2px 0;
 }
 .lien:hover { color: var(--clair); text-decoration: underline; }
 
