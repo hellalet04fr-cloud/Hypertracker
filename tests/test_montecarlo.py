@@ -83,6 +83,50 @@ def test_bloc_plus_long_quand_serie_persistante():
     assert b_iid >= 1
 
 
+# =========================================================================== Ljung-Box
+def test_chi2_cdf_sur_quantiles_connus():
+    """Les deux regimes de la gamma incomplete sont traverses : le quantile a 5 %
+    d'un chi2(5) tombe dans la serie (x/2 < a+1), celui a 95 % dans la fraction
+    continue. Une erreur de branche ne se voit pas autrement — elle rend des
+    p-valeurs plausibles mais fausses."""
+    assert mc._chi2_cdf(1.145476, 5) == pytest.approx(0.05, abs=1e-5)
+    assert mc._chi2_cdf(11.070498, 5) == pytest.approx(0.95, abs=1e-5)
+    assert mc._chi2_cdf(3.841459, 1) == pytest.approx(0.95, abs=1e-5)
+    assert mc._chi2_cdf(0.0, 5) == 0.0
+
+
+def test_ljung_box_serie_iid_p_grand():
+    q, p = mc.ljung_box(fixture_bruit(400, seed=71), h=5)
+    assert q >= 0.0
+    assert p > 0.05
+
+
+def test_ljung_box_serie_autocorrelee_p_petit():
+    """AR(1) a phi=0.6 : la dependance est franche, le test doit la nommer."""
+    q, p = mc.ljung_box(fixture_autocorrelee(600, seed=72, phi=0.6), h=5)
+    assert p < 1e-6
+    assert q > mc.ljung_box(fixture_bruit(600, seed=72), h=5)[0]
+
+
+def test_ljung_box_taux_de_faux_positifs_raisonnable():
+    """Sur du bruit, environ 5 % des series doivent tomber sous 0,05. Un test qui
+    en signale beaucoup plus ne mesure pas la dependance, il mesure sa propre
+    approximation du chi2."""
+    faux = sum(1 for s in range(120) if mc.ljung_box(fixture_bruit(300, seed=800 + s))[1] < 0.05)
+    assert faux <= 15
+
+
+def test_ljung_box_refuse_serie_trop_courte():
+    with pytest.raises(InsufficientData):
+        mc.ljung_box(fixture_bruit(5), h=5)
+
+
+def test_ljung_box_p_dans_zero_un():
+    for h in (1, 3, 5, 10):
+        _, p = mc.ljung_box(fixture_bruit(200, seed=73), h=h)
+        assert 0.0 <= p <= 1.0
+
+
 # =========================================================================== bootstrap
 def test_bootstrap_reproductible():
     a = fixture_edge(200)

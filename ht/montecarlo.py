@@ -67,6 +67,94 @@ def autocorrelation(returns, lag: int) -> float:
     return float(np.sum(x[lag:] * x[:-lag]) / denom)
 
 
+# --------------------------------------------------------------------------- chi2
+# scipy.stats n'est pas garanti present sur les machines qui font tourner le
+# generateur : la CDF du chi2 est donc ecrite ici, a partir de la fonction gamma
+# incomplete reguliere P(a,x). Deux regimes, parce qu'aucun des deux ne converge
+# partout : la serie pour x < a+1, la fraction continue de Lentz au-dela. Les
+# convertir l'un en l'autre au mauvais endroit produit des p-valeurs fausses
+# sans jamais lever.
+_EPS_GAMMA = 1e-15
+_MIN_GAMMA = 1e-300
+_ITER_GAMMA = 500
+
+
+def _gamma_p(a: float, x: float) -> float:
+    """Fonction gamma incomplete reguliere P(a,x) = gamma(a,x)/Gamma(a)."""
+    require(a > 0.0, "le parametre de forme doit etre strictement positif")
+    require(x >= 0.0, "la borne d'integration doit etre positive ou nulle")
+    if x == 0.0:
+        return 0.0
+    # facteur commun exp(-x + a ln x - ln Gamma(a)), calcule en logarithmes :
+    # x**a deborde des x ~ 700 en double precision.
+    facteur = math.exp(-x + a * math.log(x) - math.lgamma(a))
+    if x < a + 1.0:
+        terme = somme = 1.0 / a
+        ap = a
+        for _ in range(_ITER_GAMMA):
+            ap += 1.0
+            terme *= x / ap
+            somme += terme
+            if abs(terme) < abs(somme) * _EPS_GAMMA:
+                break
+        return min(1.0, somme * facteur)
+    # Fraction continue pour Q(a,x) = 1 - P(a,x), evaluee par l'algorithme de
+    # Lentz modifie : un denominateur nul en cours de route est remplace par un
+    # infiniment petit plutot que de faire diverger le quotient.
+    b = x + 1.0 - a
+    c = 1.0 / _MIN_GAMMA
+    d = 1.0 / b
+    h = d
+    for i in range(1, _ITER_GAMMA + 1):
+        an = -i * (i - a)
+        b += 2.0
+        d = an * d + b
+        if abs(d) < _MIN_GAMMA:
+            d = _MIN_GAMMA
+        c = b + an / c
+        if abs(c) < _MIN_GAMMA:
+            c = _MIN_GAMMA
+        d = 1.0 / d
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) < _EPS_GAMMA:
+            break
+    return max(0.0, 1.0 - facteur * h)
+
+
+def _chi2_cdf(x: float, k: int) -> float:
+    """Fonction de repartition d'un chi2 a `k` degres de liberte."""
+    require(k >= 1, "un chi2 demande au moins un degre de liberte")
+    return _gamma_p(k / 2.0, max(0.0, float(x)) / 2.0)
+
+
+def ljung_box(returns, h: int = 5) -> tuple[float, float]:
+    """
+    Statistique Q de Ljung-Box et sa p-valeur, chi2 a h degres.
+
+    Q = n(n+2) * somme_{k=1..h} rho_k^2 / (n-k), ou rho_k est l'autocorrelation
+    empirique au retard k. Sous l'hypothese nulle « les rendements successifs sont
+    independants », Q suit approximativement un chi2 a h degres ; une p-valeur
+    faible dit que les trades ne sont PAS independants.
+
+    C'EST UN DIAGNOSTIC, ET RIEN D'AUTRE. Il n'alimente aucun score, aucun seuil,
+    aucun classement, et ne doit jamais servir a filtrer un wallet : il indique
+    seulement que les intervalles calcules sur cette serie — et notamment tout ce
+    qui suppose l'independance — sont a lire avec prudence. Le bootstrap par blocs
+    est deja la reponse a cette dependance ; Ljung-Box ne fait que la nommer.
+    """
+    require(h >= 1, "au moins un retard")
+    a = _clean(returns)
+    n = len(a)
+    require(n > h + 1, f"serie trop courte ({n}) pour {h} retards")
+    q = 0.0
+    for k in range(1, h + 1):
+        rho = autocorrelation(a, k)
+        q += rho * rho / (n - k)
+    q *= n * (n + 2.0)
+    return float(q), float(1.0 - _chi2_cdf(q, h))
+
+
 def longueur_bloc_recommandee(returns, max_lag: int | None = None) -> int:
     """
     Longueur de bloc moyenne pour le bootstrap stationnaire.

@@ -1,0 +1,144 @@
+/*
+ * JETONS — la seule source de vérité visuelle.
+ *
+ * Registre unique sombre, assumé et peint explicitement : un instrument de
+ * mesure n'a pas de mode clair, et aucune couleur n'est héritée de l'hôte.
+ *
+ * Les ratios en commentaire sont MESURÉS (WCAG 2.1, sRGB) contre `--fond`,
+ * puis vérifiés contre les deux autres surfaces. La version précédente de ce
+ * produit portait la moitié de son texte à 2,84:1 ; le jeton fautif est banni
+ * du dépôt et un test parcourt le DOM rendu pour que ça ne revienne pas.
+ */
+:root {
+  /* ── surfaces : trois profondeurs, pas six ─────────────────────────────── */
+  --fond: #0a0d10;      /* l'application                                     */
+  --panneau: #10151a;   /* une colonne, une carte                            */
+  --eleve: #161c22;     /* survol, feuille, popover                          */
+
+  /* ── filets : NON TEXTUELS. Un séparateur n'a pas à être lisible, il a à
+     séparer. C'est ici que va tout ce qui aurait tenté d'emprunter --faible. */
+  --filet: #212932;      /* séparateur standard — 1,32:1                     */
+  --filet-fort: #2c3640; /* limite de panneau    — 1,59:1                    */
+
+  /* ── encres. PLANCHER À 4,5:1, y compris sur --eleve. ──────────────────── */
+  --clair: #fbfcfd;   /* 18,97 / 17,87 / 16,71  mesures majeures             */
+  --texte: #e8edf1;   /* 16,53 / 15,57 / 14,56  texte courant                */
+  --gris: #93a7b4;    /*  7,82 /  7,37 /  6,89  libellés, échelles           */
+  --faible: #7c93a3;  /*  6,09 /  5,73 /  5,36  second plan — PLANCHER       */
+
+  /* ── accent : UN SEUL, réservé à l'estimation ponctuelle du score.
+     Le réserver à cela seul est ce qui le rend impossible à manquer. */
+  --index: #f0a93b;   /*  9,69 /  9,13 /  8,54                              */
+  --alerte: #e4695c;  /*  6,01 /  5,66 /  5,29  vigilance uniquement        */
+
+  /* ── séries de trace. MARQUES, JAMAIS DU TEXTE.
+     Mesure : --s2 tombe à 4,42:1 sur --eleve, sous le plancher. Ces jetons
+     peignent des barres, des points et des courbes — des formes, dont la
+     lisibilité ne se juge pas au même seuil. Une légende qui les emploie
+     comme texte doit se poser sur --fond ou --panneau, jamais sur --eleve. */
+  --s-pos: #3987e5;   /* paire divergente : quantité monétaire signée        */
+  --s-neg: #e66767;
+  --s1: #3987e5;      /* catégoriel — TROIS au maximum, au-delà on renonce   */
+  --s2: #d95926;
+  --s3: #199e70;
+
+  /* ── rythme : 4 px, aucune valeur hors gamme ───────────────────────────── */
+  --e1: 4px;
+  --e2: 8px;
+  --e3: 12px;
+  --e4: 16px;
+  --e5: 20px;
+  --e6: 28px;
+  --e7: 44px;
+
+  /* ── typographie. Rien en dessous de 11 px, capitales comprises : l'audit
+     a trouvé du 9,5 px et il est illisible quel que soit le contraste. */
+  --t-xs: 11px;
+  --t-sm: 12px;
+  --t-md: 13px;
+  --t-lg: 15px;
+  --t-xl: 18px;
+  --t-2xl: 24px;
+  --t-3xl: 32px;
+  --t-4xl: 44px;
+
+  --f-titre: Archivo, 'Segoe UI', system-ui, sans-serif;
+  --f-texte: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+  --f-mono: 'DM Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  /* ── densité ───────────────────────────────────────────────────────────── */
+  --h-ligne: 28px;   /* ligne de tableau, desktop                            */
+  --h-releve: 72px;  /* relevé, mobile                                       */
+  --h-entete: 52px;
+  --h-verdict: 44px;
+  --h-nav: 50px;
+  --h-etat: 24px;
+  --cible-souris: 32px;
+  --cible-doigt: 44px;
+
+  /* ── mouvement : UNE durée courte, UNE longue, UNE courbe.
+     Le mouvement explique d'où vient une chose et où elle repart. Il ne
+     décore jamais. */
+  --duree-courte: 120ms;
+  --duree-longue: 240ms;
+  --courbe: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --z-feuille: 40;
+  --z-entete: 60;
+  --z-nav: 70;
+  --z-couche: 80;
+
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duree-courte: 0.01ms;
+    --duree-longue: 0.01ms;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--fond);
+  color: var(--texte);
+  font: 400 var(--t-lg) / 1.5 var(--f-texte);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* Chiffres TABULAIRES partout où une valeur peut changer : une mesure qui
+   danse quand elle se met à jour n'est plus une mesure. */
+.mono,
+[data-mono] {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--index);
+  outline-offset: 3px;
+  border-radius: 1px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--index) 30%, transparent);
+}
