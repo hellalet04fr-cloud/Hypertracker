@@ -148,8 +148,12 @@ def preuve(adresse: str, r: np.ndarray, brut: np.ndarray,
     #   survit_bonferroni  la p-valeur franchit 0,05 / (wallets explores). A
     #                   N_TIRAGES tirages ce seuil peut etre INATTEIGNABLE ; le
     #                   drapeau vaut alors faux PAR RESOLUTION, pas par mesure.
-    ic_exclut_zero = bool(boot_ic is not None
-                          and (boot_ic[0] > 0.0 or boot_ic[1] < 0.0))
+    # DEUX SENS, JAMAIS ADDITIONNES. Exclure zero PAR LE HAUT dit « peut-etre
+    # mieux que rien » ; par le BAS, « perd, et ce n'est pas du bruit ». Les
+    # compter ensemble produit un nombre qui flatte.
+    ic_positif = bool(boot_ic is not None and boot_ic[0] > 0.0)
+    ic_negatif = bool(boot_ic is not None and boot_ic[1] < 0.0)
+    ic_exclut_zero = ic_positif or ic_negatif
     survit = bool(p_perm is not None and boot_ic is not None
                   and p_perm < seuil_bonferroni and boot_ic[0] > 0.0)
 
@@ -165,6 +169,8 @@ def preuve(adresse: str, r: np.ndarray, brut: np.ndarray,
         "part_max": _rd(part_max),
         "bascule": bascule,
         "ic_exclut_zero": ic_exclut_zero,
+        "ic_positif": ic_positif,
+        "ic_negatif": ic_negatif,
         "survit_bonferroni": survit,
     }, hors_max
 
@@ -330,7 +336,8 @@ def main() -> int:
 
     details = [d for lot in lots.values() for d in lot.values()]
     survivants = sum(1 for d in details if d["preuve"]["survit_bonferroni"])
-    ic_positif = sum(1 for d in details if d["preuve"]["ic_exclut_zero"])
+    ic_positif = sum(1 for d in details if d["preuve"]["ic_positif"])
+    ic_negatif = sum(1 for d in details if d["preuve"]["ic_negatif"])
     # PLANCHER DE RESOLUTION du test de permutation : a N tirages, la plus petite
     # p-valeur exprimable vaut 1/(N+1). S'il depasse le seuil de Bonferroni,
     # aucun wallet ne PEUT le franchir, quelle que soit sa performance.
@@ -357,6 +364,7 @@ def main() -> int:
         # Ce que l'ecran doit pouvoir dire pour ne pas faire passer une limite de
         # dispositif pour un resultat. Voir le commentaire de `preuve()`.
         "ic_boot_positif": ic_positif,
+        "ic_boot_negatif": ic_negatif,
         "resolution_p": resolution_p,
         "tirages": N_TIRAGES,
         "test_resolu": bool(resolution_p <= seuil_bonferroni),

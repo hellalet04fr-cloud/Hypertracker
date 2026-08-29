@@ -1,0 +1,7 @@
+.item { flex: 0 0 auto; }
+.item + .item::before { content: '·'; margin-right: var(--e4); color: var(--filet-fort); }
+.verdict { color: var(--index); }
+.vieux { color: var(--alerte); }
+/* La mesure de décodage va au bout : c'est une information de diagnostic, pas
+   une information de lecture. */
+.pousse { margin-left: auto; }

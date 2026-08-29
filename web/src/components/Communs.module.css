@@ -1,0 +1,67 @@
+.separateur {
+  padding: var(--e5) var(--e4) var(--e3);
+  border-top: 1px dashed var(--filet-fort);
+  border-bottom: 1px solid var(--filet);
+  background: var(--panneau);
+}
+
+.vide {
+  padding: var(--e7) var(--e4);
+  text-align: center;
+}
+.videTexte {
+  max-width: 46ch;
+  margin: 0 auto;
+}
+
+.sect {
+  display: flex;
+  align-items: center;
+  gap: var(--e3);
+  margin: var(--e6) 0 var(--e2);
+}
+.trait {
+  flex: 1;
+  height: 1px;
+  background: var(--filet);
+}
+
+.mesure {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px var(--e2);
+  padding: var(--e3) 0;
+  border-bottom: 1px solid var(--filet);
+}
+/* Le libellé cède, la valeur ne cède jamais : c'est elle qu'on est venu lire.
+   Sans le repli, la valeur s'écrivait PAR-DESSUS le libellé dès que les deux
+   demandaient plus de place que la colonne. */
+.mesureK {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mesureV {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-md);
+  color: var(--texte);
+  white-space: nowrap;
+}
+
+.vigilance {
+  color: var(--alerte);
+  font-size: var(--t-sm);
+  line-height: 1;
+}
+
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}

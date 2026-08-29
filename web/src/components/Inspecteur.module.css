@@ -1,0 +1,38 @@
+.cadre { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.repos { padding: var(--e5) var(--e4); }
+.repos kbd {
+  font-family: var(--f-mono); font-size: 11px; padding: 1px 4px;
+  border: 1px solid var(--filet-fort); border-radius: 2px; color: var(--gris);
+}
+
+.tete { padding: var(--e4) var(--e4) var(--e2); display: flex; flex-direction: column; gap: var(--e1); }
+.adr { word-break: break-all; white-space: normal; user-select: all; }
+
+.onglets { display: flex; border-bottom: 1px solid var(--filet-fort); }
+.onglet {
+  flex: 1 1 0;
+  min-height: var(--cible-doigt);
+  padding: 0 var(--e2);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--faible);
+  font: 400 var(--t-sm) / 1 var(--f-texte);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+}
+.onglet:hover { color: var(--texte); }
+.onglet.actif { color: var(--clair); border-bottom-color: var(--index); }
+.touche { opacity: 0.6; }
+
+.contenu { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--e4) var(--e6); }
+
+.hero { padding: var(--e5) 0 var(--e4); border-bottom: 1px solid var(--filet); }
+.grand { display: block; line-height: 0.95; letter-spacing: -0.04em; margin: var(--e2) 0 var(--e3); }
+.rail { display: block; width: 100%; height: auto; }
+
+.note { margin-top: var(--e3); max-width: 62ch; }
+.intro { margin: var(--e4) 0; max-width: 62ch; }
+.figure { padding: var(--e3) 0; display: flex; flex-direction: column; gap: var(--e2); }
+.figure svg { display: block; width: 100%; height: auto; }
+.charge { padding: var(--e4) 0; }

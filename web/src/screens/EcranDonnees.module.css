@@ -1,0 +1,8 @@
+.corps { padding: 0 var(--e4) var(--e6); }
+.scroll { overflow-y: auto; min-height: 0; }
+.grille { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--e6); }
+@media (max-width: 420px) { .grille { grid-template-columns: minmax(0, 1fr); } }
+.age { display: block; margin-top: 2px; }
+.note { margin-top: var(--e3); max-width: 72ch; }
+.blocage { margin-top: var(--e6); padding: var(--e4); background: var(--panneau); border-left: 2px solid var(--alerte); }
+.aside { padding: var(--e4); display: flex; flex-direction: column; gap: var(--e2); }

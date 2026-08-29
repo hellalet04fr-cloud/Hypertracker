@@ -20,7 +20,11 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('node_modules')) {
             if (id.includes('react-router')) return 'routeur'
-            if (id.includes('react-dom') || id.includes('/react/')) return 'react'
+            // `scheduler` appartient au runtime React : le laisser dans `vendor`
+            // creait un cycle vendor -> react -> vendor, que Rollup signale et
+            // qui empeche le decoupage de tenir sa promesse.
+            if (id.includes('react-dom') || id.includes('/react/') || id.includes('scheduler'))
+              return 'react'
             return 'vendor'
           }
           return undefined

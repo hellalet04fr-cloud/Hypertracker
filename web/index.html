@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0A0D10" />
+    <title>HyperTracker</title>
+
+    <!--
+      CHARGEMENT NON BLOQUANT DES POLICES. Une feuille de styles de polices dans
+      le <head> BLOQUE le rendu : hôte injoignable, l'écran est resté blanc
+      12 874 ms avant le premier pixel. `media="print"` la sort du chemin
+      critique, `onload` la rebascule dès qu'elle arrive, et les piles de repli
+      déclarées dans les jetons prennent le relais entre-temps — c'est
+      exactement leur rôle.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap"
+      />
+    </noscript>
+  </head>
+  <body>
+    <div id="racine"></div>
+    <noscript>
+      <p style="padding: 20px; color: #e8edf1; font-family: system-ui">
+        HyperTracker a besoin de JavaScript : le classement se décode et se trie dans le
+        navigateur, il n’existe pas sous forme de page pré-rendue.
+      </p>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+.puits {
+  position: relative;
+  margin-top: var(--e2);
+  padding: var(--e3) var(--e2) var(--e2);
+  background: var(--panneau);
+  min-height: 60px;
+}
+/* touch-action: none — sans lui, le navigateur interprète le suivi de
+   l'infobulle comme un défilement, et les deux se disputent le doigt. */
+.canvas { display: block; width: 100%; touch-action: none; }
+.bulle {
+  position: absolute;
+  top: var(--e2);
+  right: var(--e2);
+  background: var(--fond);
+  padding: var(--e1) var(--e2);
+  pointer-events: none;
+}
+.note { margin-top: var(--e2); max-width: 62ch; }
+.charge { padding: var(--e4) 0; }

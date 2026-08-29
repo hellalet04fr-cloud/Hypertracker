@@ -1,0 +1,99 @@
+.cadre { flex: 1; min-height: 0; overflow: auto; position: relative; }
+.piste { position: relative; }
+
+/* `min-width: max-content` sur les deux : sans elle, la piste de defilement se
+   cale sur le conteneur et les colonnes qui depassent deviennent
+   inatteignables plutot que d'etre atteignables en defilant. */
+.entete {
+  display: flex;
+  align-items: stretch;
+  min-width: max-content;
+  height: var(--h-ligne);
+  border-bottom: 1px solid var(--filet-fort);
+  background: var(--panneau);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.th {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 0 var(--e2);
+  background: none;
+  border: 0;
+  color: var(--faible);
+  font: 400 var(--t-xs) / 1 var(--f-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+button.th { cursor: pointer; }
+button.th:hover { color: var(--gris); }
+.th.d { justify-content: flex-end; }
+.trie { color: var(--index); }
+.rangTri { margin-left: 4px; font-size: 9px; opacity: 0.8; }
+
+
+/* Le calque des rails : une seule surface, au-dessus de la colonne, immobile
+   verticalement pendant que les lignes défilent dessous — mais solidaire des
+   colonnes quand on défile horizontalement. La boîte a une HAUTEUR NULLE :
+   elle ne prend aucune place dans le flux. */
+.calqueBoite {
+  position: sticky;
+  top: 0;
+  height: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.calqueRail { display: block; }
+
+.tr {
+  display: flex;
+  align-items: center;
+  height: var(--h-ligne);
+  min-width: max-content;
+  width: 100%;
+  border-bottom: 1px solid var(--filet);
+  cursor: default;
+}
+.tr:hover { background: var(--eleve); }
+.actif { background: var(--eleve); box-shadow: inset 2px 0 0 var(--index); }
+.epingle { box-shadow: inset 2px 0 0 var(--index), inset 0 0 0 1px var(--filet-fort); }
+
+.td {
+  flex: 0 0 auto;
+  padding: 0 var(--e2);
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-sm);
+  color: var(--texte);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: var(--h-ligne);
+}
+.td.d { text-align: right; }
+
+.lien {
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  color: var(--gris);
+}
+.lien:hover { color: var(--clair); text-decoration: underline; }
+
+/* La SEULE colonne en accent. */
+.score { color: var(--index); font-weight: 500; }
+.faible { color: var(--faible); }
+.absent { color: var(--faible); }
+.vig { color: var(--alerte); margin-left: 4px; }
+
+/* Paire divergente : quantités monétaires signées uniquement. */
+.pos { color: var(--s-pos); }
+.neg { color: var(--s-neg); }
+.nul { color: var(--faible); }

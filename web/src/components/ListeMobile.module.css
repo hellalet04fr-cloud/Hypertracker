@@ -1,0 +1,67 @@
+.scroll {
+  overflow-y: auto;
+  min-height: 0;
+  height: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.releve {
+  position: relative;
+  height: 72px;
+  padding: var(--e2) var(--e4);
+  border-bottom: 1px solid var(--filet);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+.releve[data-suivi] { box-shadow: inset 2px 0 0 var(--index); }
+.releve:active { background: var(--eleve); }
+
+.haut { display: flex; align-items: baseline; gap: var(--e2); }
+.marques { margin-left: auto; display: flex; gap: var(--e1); }
+.vig, .dort { color: var(--alerte); font-size: var(--t-sm); line-height: 1; }
+
+.mesure { display: flex; align-items: center; gap: var(--e3); }
+.score { flex: 0 0 auto; letter-spacing: -0.03em; }
+.rail { flex: 1 1 auto; width: 100%; height: auto; display: block; }
+
+.bas { line-height: 1.3; }
+
+/* Bouton d'ouverture INVISIBLE mais réel : il couvre le relevé, porte le
+   libellé destiné aux lecteurs d'écran, et rend la ligne focalisable au
+   clavier — sans masquer son contenu comme le faisait un aria-label de
+   conteneur. */
+.ouvrir {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.ouvrir:focus-visible { outline: 2px solid var(--index); outline-offset: -2px; }
+
+.suivre {
+  position: absolute;
+  right: var(--e4);
+  bottom: var(--e2);
+  z-index: 1;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 var(--e2);
+  background: none;
+  border: 0;
+  color: var(--faible);
+  font: 400 var(--t-xs) / 1 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.suivre[aria-pressed='true'] { color: var(--index); }
+
+.bandeSep {
+  display: flex;
+  align-items: baseline;
+  gap: var(--e3);
+  padding: var(--e5) var(--e4) var(--e2);
+  border-bottom: 1px solid var(--filet);
+}
+.bandeSep > :last-child { margin-left: auto; }

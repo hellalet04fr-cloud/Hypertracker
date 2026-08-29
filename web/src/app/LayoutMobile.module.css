@@ -1,0 +1,75 @@
+.app {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  min-height: 100dvh;
+  background: var(--fond);
+}
+
+/* FOND PLEIN, jamais un backdrop-filter seul : voir l'en-tête du composant. */
+.entete {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-entete);
+  display: flex;
+  align-items: center;
+  gap: var(--e3);
+  min-height: var(--h-entete);
+  padding: var(--e2) var(--e4);
+  padding-top: calc(var(--e2) + env(safe-area-inset-top));
+  background: var(--fond);
+  border-bottom: 1px solid var(--filet);
+}
+
+.titres {
+  flex: 1;
+  min-width: 0;
+}
+
+.h1 {
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.corps {
+  min-width: 0;
+  padding-bottom: var(--e5);
+}
+
+.nav {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-nav);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  background: var(--fond);
+  border-top: 1px solid var(--filet);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.onglet {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--h-nav);
+  padding: 0 var(--e2);
+  color: var(--faible);
+  text-decoration: none;
+  font: 400 var(--t-sm) / 1 var(--f-texte);
+  transition: color var(--duree-courte) var(--courbe);
+}
+
+.actif {
+  color: var(--clair);
+}
+
+.actif::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 2px;
+  background: var(--index);
+}

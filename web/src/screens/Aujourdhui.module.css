@@ -1,0 +1,69 @@
+.corps { padding: 0 var(--e4) var(--e6); }
+.scroll { overflow-y: auto; min-height: 0; }
+
+.bande4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--e4);
+  padding: var(--e4) 0;
+  border-bottom: 1px solid var(--filet);
+}
+.bande4 > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.phrase { margin-top: var(--e4); max-width: 68ch; }
+.cycle { margin-top: var(--e3); }
+.vieux { color: var(--alerte); }
+.note { margin-top: var(--e3); max-width: 68ch; }
+
+.li {
+  display: flex;
+  align-items: center;
+  gap: var(--e3);
+  min-height: var(--cible-doigt);
+  padding: var(--e2) 0;
+  border-bottom: 1px solid var(--filet);
+  text-decoration: none;
+  transition: background var(--duree-courte) var(--courbe);
+}
+.li:hover { background: var(--eleve); }
+.bande { flex: 0 0 auto; }
+.adr { flex: 0 0 auto; }
+.extra { margin-left: auto; text-align: right; max-width: 52%; }
+
+.mkDort { color: var(--alerte); font-size: var(--t-sm); line-height: 1; }
+.mkVig { color: var(--alerte); font-size: var(--t-sm); line-height: 1; }
+
+.tout {
+  display: block;
+  width: 100%;
+  padding: var(--e3) 0;
+  min-height: var(--cible-doigt);
+  border-bottom: 1px solid var(--filet);
+  color: var(--gris);
+  text-decoration: none;
+  font: 400 var(--t-sm) / 1.4 var(--f-texte);
+}
+
+.repli { border-bottom: 1px solid var(--filet); }
+.repli summary {
+  min-height: var(--cible-doigt);
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--faible);
+  font: 400 var(--t-sm) / 1.4 var(--f-texte);
+  list-style: none;
+}
+.repli summary::-webkit-details-marker { display: none; }
+.repli summary::after { content: '+'; margin-left: auto; font-family: var(--f-mono); }
+.repli[open] summary::after { content: '–'; }
+.repli > * + * { padding-bottom: var(--e3); }
+
+.blocage {
+  margin-top: var(--e6);
+  padding: var(--e4);
+  background: var(--panneau);
+  border-left: 2px solid var(--alerte);
+}
+
+.aside { padding: var(--e4); display: flex; flex-direction: column; gap: var(--e2); }

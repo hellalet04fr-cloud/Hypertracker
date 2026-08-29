@@ -140,6 +140,10 @@ export interface Preuve {
    * 291 wallets on en attend une quinzaine par pur hasard à 95 %.
    */
   ic_exclut_zero: boolean
+  /** l'intervalle est entièrement AU-DESSUS de zéro : peut-être mieux que rien */
+  ic_positif: boolean
+  /** entièrement AU-DESSOUS : ce wallet perd, et ce n'est pas du bruit */
+  ic_negatif: boolean
   /**
    * Franchit-il le seuil de test multiple ? Quand `Meta.test_resolu` est faux,
    * ce drapeau vaut faux PAR RÉSOLUTION du test, pas par mesure — le lire comme
@@ -224,8 +228,14 @@ export interface Meta {
   seuil_bonferroni: number
   /** combien survivent au bootstrap par blocs ET à Bonferroni */
   survivants: number
-  /** combien ont un IC de bootstrap excluant zéro, avant correction */
+  /**
+   * Combien ont un IC de bootstrap entièrement AU-DESSUS de zéro, avant
+   * correction pour tests multiples. À ne jamais additionner avec le compte
+   * négatif : les deux disent des choses opposées.
+   */
   ic_boot_positif: number
+  /** combien ont un IC entièrement AU-DESSOUS de zéro : perte établie */
+  ic_boot_negatif: number
   /** plus petite p-valeur exprimable : 1 / (tirages + 1) */
   resolution_p: number
   /** nombre de rééchantillonnages par wallet */

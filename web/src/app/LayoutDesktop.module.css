@@ -1,0 +1,73 @@
+.poste {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) var(--h-etat);
+  height: 100dvh;
+  background: var(--fond);
+}
+
+.colonnes {
+  display: grid;
+  min-height: 0;
+}
+
+.population,
+.releve,
+.inspecteur {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.population {
+  background: var(--panneau);
+}
+.releve {
+  background: var(--fond);
+}
+.inspecteur {
+  background: var(--panneau);
+}
+
+/* Le séparateur fait 1 px ; la ZONE DE PRISE en fait 8, débordant de part et
+   d'autre. Un séparateur d'un pixel est visuellement juste et pratiquement
+   inattrapable — les deux besoins ne sont pas les mêmes. */
+.poignee {
+  position: relative;
+  width: 1px;
+  background: var(--filet-fort);
+  cursor: col-resize;
+  touch-action: none;
+}
+.poignee::before {
+  content: '';
+  position: absolute;
+  inset: 0 -4px;
+}
+.poignee:hover,
+.poignee:focus-visible {
+  background: var(--index);
+}
+.poignee:focus-visible {
+  outline: 2px solid var(--index);
+  outline-offset: 1px;
+}
+
+.etat {
+  display: flex;
+  align-items: center;
+  gap: var(--e4);
+  padding: 0 var(--e4);
+  border-top: 1px solid var(--filet-fort);
+  background: var(--panneau);
+  font-family: var(--f-mono);
+  font-size: var(--t-xs);
+  color: var(--faible);
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.etat::-webkit-scrollbar {
+  display: none;
+}

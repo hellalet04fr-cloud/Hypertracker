@@ -1,0 +1,52 @@
+.ecran {
+  padding: var(--e5) var(--e4);
+}
+
+.entete {
+  display: flex;
+  flex-direction: column;
+  gap: var(--e2);
+  margin-bottom: var(--e6);
+}
+
+.ligne {
+  display: flex;
+  align-items: center;
+  gap: var(--e3);
+  padding: var(--e3) 0;
+  border-bottom: 1px solid var(--filet);
+}
+
+.bloc {
+  display: block;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--panneau) 0%, var(--eleve) 50%, var(--panneau) 100%);
+  background-size: 200% 100%;
+  animation: balayage 1.4s var(--courbe) infinite;
+}
+
+@keyframes balayage {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Une animation qui n'explique rien n'a pas à s'imposer. */
+@media (prefers-reduced-motion: reduce) {
+  .bloc {
+    animation: none;
+    background: var(--panneau);
+  }
+}
+
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}

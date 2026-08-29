@@ -1,0 +1,83 @@
+.colonne { padding: var(--e3) 0 var(--e5); overflow-y: auto; min-height: 0; }
+.titre { padding: var(--e4) var(--e4) var(--e2); }
+
+.entree {
+  display: flex;
+  align-items: center;
+  gap: var(--e2);
+  width: 100%;
+  min-height: var(--cible-souris);
+  padding: 0 var(--e4);
+  background: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  color: var(--gris);
+  font: 400 var(--t-sm) / 1 var(--f-texte);
+  text-align: left;
+  cursor: pointer;
+}
+.entree:hover { background: var(--eleve); color: var(--texte); }
+.entree.actif { border-left-color: var(--index); color: var(--clair); background: var(--eleve); }
+.lib { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entree > :last-child { margin-left: auto; }
+
+/* Bande de convention : 44 px de haut, parce que c'est AUSSI un contrôle. */
+.convention { display: flex; gap: var(--e2); padding: 0 var(--e4); flex-wrap: wrap; }
+.seg {
+  flex: 1 1 0;
+  min-width: 56px;
+  min-height: var(--cible-doigt);
+  padding: var(--e3) 0;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.seg i { display: block; height: 0; border-top-width: 1px; border-top-color: var(--gris); margin-bottom: var(--e2); }
+.t0 { border-top-style: solid; }
+.t1 { border-top-style: dashed; }
+.t2 { border-top-style: dotted; }
+.seg span {
+  display: block;
+  font: 400 var(--t-xs) / 1.3 var(--f-mono);
+  letter-spacing: 0.04em;
+  color: var(--faible);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.seg.actif i { border-top-color: var(--index); border-top-width: 2px; }
+.seg.actif span { color: var(--index); }
+
+.pied { padding: var(--e4); max-width: 40ch; }
+
+/* Rangée mobile : le masque dit qu'il reste du contenu à droite. */
+.rangee {
+  display: flex;
+  gap: var(--e3);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: var(--e2) var(--e4) var(--e3);
+  mask-image: linear-gradient(90deg, #000 93%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, #000 93%, transparent);
+}
+.rangee::-webkit-scrollbar { display: none; }
+
+.pastille {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e2);
+  min-height: var(--cible-doigt);
+  min-width: var(--cible-doigt);
+  padding: 0 10px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  color: var(--faible);
+  font: 400 var(--t-sm) / 1 var(--f-texte);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pastille.actif { color: var(--clair); border-bottom-color: var(--index); }
+.n { opacity: 0.8; }

@@ -1,0 +1,41 @@
+.boite { position: relative; padding: var(--e3) var(--e4) var(--e2); }
+
+.champ {
+  width: 100%;
+  min-height: var(--cible-doigt);
+  padding: var(--e2) 44px var(--e2) 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--filet);
+  color: var(--clair);
+  font: 400 var(--t-lg) / 1 var(--f-mono);
+  outline: none;
+}
+.champ::placeholder { color: var(--faible); font-family: var(--f-texte); font-size: var(--t-md); }
+.champ:focus { border-bottom-color: var(--gris); }
+.champ[aria-invalid='true'] { border-bottom-color: var(--alerte); }
+.champ::-webkit-search-cancel-button { display: none; }
+
+.effacer {
+  position: absolute;
+  right: var(--e4);
+  top: var(--e3);
+  width: 44px;
+  height: 44px;
+  background: none;
+  border: 0;
+  color: var(--gris);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.genre { display: block; margin-top: var(--e1); }
+
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}

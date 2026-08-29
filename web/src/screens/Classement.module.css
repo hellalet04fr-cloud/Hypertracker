@@ -1,0 +1,2 @@
+.mobile { min-height: 0; height: 100%; }
+.note { padding: 0 var(--e4) var(--e3); max-width: 60ch; }

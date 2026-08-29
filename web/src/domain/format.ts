@@ -13,8 +13,13 @@ export const NA = 'N/D'
 /** Moins typographique U+2212 : le trait d'union est trop court pour un signe. */
 const MOINS = '−'
 
-const fr = (v: number, d: number) =>
-  v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d })
+const fr = (v: number, d: number) => {
+  // `(-0.004).toFixed(2)` rend « -0,00 » : un signe negatif sur une valeur
+  // arrondie a zero ne dit rien de la mesure, il dit d'ou elle venait — ce que
+  // la precision affichee ne porte deja plus.
+  const arrondi = Math.abs(v) < 0.5 / 10 ** d ? 0 : v
+  return arrondi.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d })
+}
 
 /** Nombre en locale française, ou N/D. */
 export function nb(v: number | null | undefined, d = 2): string {

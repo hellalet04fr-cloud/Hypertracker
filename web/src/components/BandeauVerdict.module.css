@@ -1,0 +1,27 @@
+.bandeau {
+  padding: var(--e4) var(--e5);
+  background: var(--panneau);
+  border-top: 1px solid var(--alerte);
+  border-bottom: 1px solid var(--filet);
+}
+
+/* Sur le poste de travail, le bandeau tient la pleine largeur en 44 px : il
+   domine sans occuper. Sur mobile il a le droit de respirer, parce qu'il est la
+   première chose lue avant la première ligne. */
+.compact {
+  padding: var(--e2) var(--e4);
+  min-height: var(--h-verdict);
+  justify-content: center;
+}
+
+.bandeau[data-etat='perime'] {
+  border-top-width: 2px;
+}
+
+.limite {
+  max-width: 78ch;
+}
+
+.chiffres {
+  white-space: normal;
+}
