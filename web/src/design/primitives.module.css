@@ -1,0 +1,148 @@
+.surface {
+  background: var(--fond);
+}
+.fond {
+  background: var(--fond);
+}
+.panneau {
+  background: var(--panneau);
+}
+.eleve {
+  background: var(--eleve);
+}
+
+/* Les filets sont NON TEXTUELS : ils séparent, ils ne se lisent pas. C'est ici
+   que va tout ce qui aurait été tenté d'emprunter une encre trop sombre. */
+.filet_haut {
+  border-top: 1px solid var(--filet);
+}
+.filet_bas {
+  border-bottom: 1px solid var(--filet);
+}
+.filet_droite {
+  border-right: 1px solid var(--filet);
+}
+.filet_gauche {
+  border-left: 1px solid var(--filet);
+}
+.fort.filet_haut {
+  border-top-color: var(--filet-fort);
+}
+.fort.filet_bas {
+  border-bottom-color: var(--filet-fort);
+}
+.fort.filet_droite {
+  border-right-color: var(--filet-fort);
+}
+.fort.filet_gauche {
+  border-left-color: var(--filet-fort);
+}
+
+.stack {
+  display: flex;
+  min-width: 0;
+}
+.stack[data-sens='colonne'] {
+  flex-direction: column;
+}
+.stack[data-sens='ligne'] {
+  flex-direction: row;
+}
+.stack[data-retour] {
+  flex-wrap: wrap;
+}
+.stack[data-aligne='debut'] {
+  align-items: flex-start;
+}
+.stack[data-aligne='centre'] {
+  align-items: center;
+}
+.stack[data-aligne='fin'] {
+  align-items: flex-end;
+}
+.stack[data-aligne='base'] {
+  align-items: baseline;
+}
+.stack[data-aligne='etire'] {
+  align-items: stretch;
+}
+.stack[data-repartit='debut'] {
+  justify-content: flex-start;
+}
+.stack[data-repartit='centre'] {
+  justify-content: center;
+}
+.stack[data-repartit='fin'] {
+  justify-content: flex-end;
+}
+.stack[data-repartit='entre'] {
+  justify-content: space-between;
+}
+.stack[data-repartit='autour'] {
+  justify-content: space-around;
+}
+
+.text {
+  margin: 0;
+  min-width: 0;
+}
+.v_titre {
+  font-family: var(--f-titre);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+.v_corps {
+  font-family: var(--f-texte);
+  line-height: 1.5;
+}
+/* Un libellé en capitales a besoin de plus d'interlettrage, pas de moins de
+   taille : l'audit a trouvé du 9,5 px et il est illisible quel que soit le
+   contraste. Le plancher est à 11 px, imposé par le type `Taille`. */
+.v_libelle {
+  font-family: var(--f-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+.coupe {
+  display: -webkit-box;
+  -webkit-line-clamp: var(--lignes, 2);
+  line-clamp: var(--lignes, 2);
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mono {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.div {
+  border: 0;
+  border-top: 1px solid var(--filet);
+  margin: 0;
+  width: 100%;
+}
+.divVert {
+  border: 0;
+  border-left: 1px solid var(--filet);
+  margin: 0;
+  height: 100%;
+  width: 0;
+}
+
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
