@@ -18,7 +18,7 @@
 .releve[data-suivi] { box-shadow: inset 2px 0 0 var(--index); }
 .releve:active { background: var(--eleve); }
 
-.haut { display: flex; align-items: baseline; gap: var(--e2); }
+.haut { display: flex; align-items: baseline; gap: var(--e2); padding-right: 68px; }
 .marques { margin-left: auto; display: flex; gap: var(--e1); }
 .vig, .dort { color: var(--alerte); font-size: var(--t-sm); line-height: 1; }
 
@@ -39,10 +39,13 @@
 }
 .ouvrir:focus-visible { outline: 2px solid var(--index); outline-offset: -2px; }
 
+/* EN HAUT A DROITE, pas en bas : pose sous le score, il chevauchait le rail —
+   et le rail est la figure que ce produit ne laisse jamais amputer. La rangee
+   du haut, elle, a de la place. */
 .suivre {
   position: absolute;
-  right: var(--e4);
-  bottom: var(--e2);
+  right: var(--e2);
+  top: var(--e1);
   z-index: 1;
   min-height: 44px;
   min-width: 44px;
